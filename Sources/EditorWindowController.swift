@@ -27,8 +27,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private var exportedState: UUID?
     private var isPresentingSave = false
     private var feedbackReset: DispatchWorkItem?
+    private let imagePathCopier: ImagePathCopier
 
-    init(image: CGImage) {
+    init(image: CGImage, imagePathCopier: ImagePathCopier = ImagePathCopier()) {
+        self.imagePathCopier = imagePathCopier
         canvas = CanvasView(image: image)
         let window = EditorWindow(contentRect: CGRect(x: 0, y: 0, width: 1060, height: 740),
                                   styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -43,7 +45,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         window.handleShortcut = { [weak self] event in self?.handleShortcut(event) ?? false }
         buildInterface()
         canvas.onChange = { [weak self] in self?.updateControls() }
-        canvas.onCopy = { [weak self] in self?.copyImage(nil) }
+        canvas.onCopy = { [weak self] in self?.copyImagePath(nil) }
         canvas.onCancel = { [weak self] in self?.window?.performClose(nil) }
         updateControls()
         window.center()
@@ -180,10 +182,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
                             width: 32, selector: #selector(redoAction(_:)))
         undoButton.toolTip = "撤销（⌘Z）"
         redoButton.toolTip = "重做（⇧⌘Z）"
-        copyButton = button("复制", symbol: "doc.on.doc", label: "复制图片", identifier: "editor.export.copy",
-                            width: 78, selector: #selector(copyImage(_:)))
+        copyButton = button("复制路径", symbol: "doc.on.doc", label: "保存标注 PNG 并复制文件路径", identifier: "editor.export.copy",
+                            width: 108, selector: #selector(copyImagePath(_:)))
         copyButton.emphasis = .primary
-        copyButton.toolTip = "复制图片（⇧⌘C）· 文字输入时也可用"
+        copyButton.toolTip = "复制路径（⇧⌘C）· 先保存标注 PNG，再复制绝对路径供本机 Codex CLI 读取；文件会保留"
         saveButton = button("保存", symbol: "square.and.arrow.down", label: "保存 PNG", identifier: "editor.export.save",
                             width: 78, selector: #selector(saveImage(_:)))
         saveButton.toolTip = "保存 PNG…（⌘S）"
@@ -229,13 +231,13 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
     private func feedback(on button: EditorToolbarButton, title: String) {
         feedbackReset?.cancel()
-        copyButton.setCaption("复制")
+        copyButton.setCaption("复制路径")
         saveButton.setCaption("保存")
         button.setCaption(title)
         NSAccessibility.post(element: button, notification: .announcementRequested,
                              userInfo: [.announcement: title, .priority: NSAccessibilityPriorityLevel.medium.rawValue])
         let work = DispatchWorkItem { [weak self] in
-            self?.copyButton.setCaption("复制")
+            self?.copyButton.setCaption("复制路径")
             self?.saveButton.setCaption("保存")
             self?.feedbackReset = nil
         }
@@ -259,24 +261,17 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     @objc func undoAction(_ sender: Any?) { canvas.undoAnnotation() }
     @objc func redoAction(_ sender: Any?) { canvas.redoAnnotation() }
 
-    @objc func copyImage(_ sender: Any?) {
+    @objc func copyImagePath(_ sender: Any?) {
         do {
             let png = try canvas.exportPNG()
-            let pasteboard = NSPasteboard.general
-            let item = NSPasteboardItem()
-            item.setData(png, forType: .png)
-            if let bitmap = NSBitmapImageRep(data: png), let tiff = bitmap.tiffRepresentation {
-                item.setData(tiff, forType: .tiff)
-            }
-            pasteboard.clearContents()
-            guard pasteboard.writeObjects([item]) else {
-                showError("无法写入剪贴板，请重试。")
-                return
-            }
+            _ = try imagePathCopier.copyPNG(png)
             exportedState = canvas.history.current.id
             updateControls()
-            feedback(on: copyButton, title: "已复制")
-        } catch { showError(error.localizedDescription) }
+            feedback(on: copyButton, title: "路径已复制")
+        } catch {
+            feedback(on: copyButton, title: "复制失败")
+            showError(error.localizedDescription)
+        }
     }
     @objc func saveImage(_ sender: Any?) {
         guard !isPresentingSave, let window = window else { return }
@@ -313,11 +308,11 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         if modifiers == .command && event.keyCode == 36 {
             canvas.commitText(); return true
         }
-        if modifiers == [.command, .shift] && key == "c" { copyImage(nil); return true }
+        if modifiers == [.command, .shift] && key == "c" { copyImagePath(nil); return true }
         if modifiers == .command && key == "w" { window?.performClose(nil); return true }
         if modifiers == .command && key == "s" { saveImage(nil); return true }
         if !canvas.isEditingText {
-            if modifiers == .command && key == "c" { copyImage(nil); return true }
+            if modifiers == .command && key == "c" { copyImagePath(nil); return true }
             if modifiers == .command && key == "z" { undoAction(nil); return true }
             if modifiers == [.command, .shift] && key == "z" { redoAction(nil); return true }
         }

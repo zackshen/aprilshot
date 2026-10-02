@@ -2,17 +2,18 @@
 
 一个轻量、原生 Swift / AppKit 的 macOS 菜单栏截图 MVP。
 
-按 **⌘⇧2（Command + Shift + 2）**，拖选屏幕区域，立即画笔或文字标注，再复制或保存 PNG。关闭标注窗口后，App 仍驻留菜单栏。
+按 **⌘⇧2（Command + Shift + 2）**，拖选屏幕区域，立即画笔或文字标注，再复制图片路径或保存 PNG。关闭标注窗口后，App 仍驻留菜单栏。
 
 ## 已实现
 
 - 菜单栏常驻，无 Dock 图标；菜单和全局快捷键均可开始截图
 - 调用 macOS 自带区域选择器，支持 Esc 取消；重复快捷键不会启动重叠捕获
 - 紧凑分组工具栏：图标、当前工具高亮、原生颜色选择；按工具显示粗细或字号
-- 画布直达窗口底部；复制 / 保存结果直接在按钮上短暂提示
+- 画布直达窗口底部；复制路径 / 保存结果直接在按钮上短暂提示
 - 画笔、颜色、粗细；文字、字号、中文输入与换行
 - 以整条画笔 / 整段文字为单位撤销和重做
-- 复制 PNG + TIFF 到剪贴板；PNG 保存对话框支持选择位置
+- 复制路径：先将标注 PNG 持久保存到本机，再把绝对文件路径作为文本放入剪贴板，方便粘贴给本机 Codex CLI
+- 已复制图片不会自动删除；菜单可打开存放文件夹，PNG 保存对话框仍支持自行选择位置
 - 预览按窗口缩放，导出保留截图原始像素尺寸
 - 多个截图窗口互不覆盖；新截图暂时隐藏所有 AprilShot 窗口
 - 未复制 / 未保存时关闭或退出会提示；取消保存不丢失编辑
@@ -76,14 +77,25 @@ SIGN_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build.sh
 | 完成当前文字 | ⌘Return，或点击画布 / 工具按钮 |
 | 放弃当前文字 | Esc |
 | 撤销 / 重做标注 | ⌘Z / ⇧⌘Z |
-| 复制整张标注图 | ⇧⌘C，或工具栏“复制”；非文字编辑时也支持 ⌘C |
+| 保存标注图并复制路径 | ⇧⌘C，或工具栏“复制路径”；非文字编辑时也支持 ⌘C |
+| 查看已复制图片 | 菜单栏“打开已复制图片文件夹…” |
 | 保存 PNG | ⌘S，或工具栏“保存” |
 | 关闭编辑窗口 | 窗口关闭按钮或 ⌘W |
 | 退出 App | 菜单栏“退出 AprilShot”或 App 活跃时 ⌘Q |
 
 输入文字时，⌘C / ⌘Z 等保留系统文字编辑含义。颜色、画笔粗细和字号仅影响新标注。尺寸按原图像素计算；在大尺寸 / Retina 截图中，可提高字号和粗细。
 
-复制或保存后窗口保持打开，可以继续标注。只有当前版本成功复制或保存后，关闭时才不提示丢弃。
+复制路径或保存后窗口保持打开，可以继续标注。只有当前版本成功复制或保存后，关闭时才不提示丢弃。
+
+### 在本机 Codex CLI 中使用
+
+1. 在图片上完成画笔 / 文字标注，点击“复制路径”或按 ⇧⌘C；当前仍在输入的文字和未结束的笔画也会包含在 PNG 内。
+2. 在同一台 Mac 的 Codex CLI 提示输入区粘贴，例如输入“请查看这张图片：”再按 ⌘V。得到的是 `/Users/你的用户名/Library/Application Support/AprilShot/Exports/AprilShot_日期时间_UUID.png` 这样的绝对路径文本，不是 `file://` URL，也不是图片剪贴板格式。
+3. PNG 保留原始像素尺寸。每次复制生成独立文件，后续复制、关闭窗口、退出或重开 AprilShot 都不会删除或覆盖旧图片。
+
+图片存放于 `~/Library/Application Support/AprilShot/Exports`；可以从菜单“打开已复制图片文件夹…”进入 Finder 查看和手动清理。文件可能包含屏幕上的私密信息，**不会自动清理，也不自动上传**；手动删除后，之前粘贴过的路径会失效。复制失败会显示原因，磁盘写入失败时剪贴板不变。
+
+路径用于 Codex 的对话提示，不是可执行命令。若自己将它用作终端命令参数，请按 shell 规则给带空格的路径加引号。运行在 SSH、容器或云端的 Codex 无法直接访问这台 Mac 的路径，需要另行传输文件。Codex 是否可以读到文件仍受它的工作环境和访问权限限制。
 
 ## MVP 边界
 
@@ -104,6 +116,8 @@ SIGN_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build.sh
 
 工具栏回归额外实例化真实编辑器，检查浅 / 深色、最小 / 大窗口布局、无底部信息栏、工具选中态、设置与历史操作，并生成合成预览图供目视检查。
 
+复制路径回归覆盖真实 AppKit 输入、PNG 落盘与系统剪贴板：未结束的笔画、输入中的中文文字、文件像素和尺寸、重复复制唯一性、Unicode / 空格路径、关闭后保留、独立本地进程读取，以及存储 / 剪贴板失败和恢复。它不等于实际 Codex CLI 的端到端粘贴验收。
+
 `.github/workflows/macos.yml` 会在 push / pull request 时于 macOS runner 编译完整 App、执行这些测试，并提供 7 天保留的开发版构建产物和渲染证据。CI 不代表屏幕授权或全局热键等交互验收；CI 产物也未经公证。
 
 这份源码最初在 Linux 工作区编写，该环境无 Swift / Xcode / macOS SDK。交付时的实际检查状态见 [VALIDATION.md](VALIDATION.md)，不要把测试脚本的存在理解为已通过 macOS 运行测试。
@@ -115,12 +129,14 @@ SIGN_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build.sh
 - `Sources/ScreenshotCapture.swift`：系统区域截图和临时文件清理
 - `Sources/CanvasView.swift`：画笔、内联文本和画布事件
 - `Sources/EditorWindowController.swift`：工具栏布局、复制、保存和防丢失提示
+- `Sources/ImagePathCopier.swift`：持久 PNG 保存和纯文本绝对路径复制
 - `Sources/EditorToolbar.swift`：原生工具按钮、分组外观与选中态
 - `Sources/Annotation.swift`：共享预览 / PNG 绘制器
 - `Sources/Core/`：可测试的坐标与撤销历史
 - `Tests/CoreTests.swift`：核心自动断言测试
 - `Tests/CaptureRenderingTests.swift`：文件清理后的真实 AppKit 画布与 PNG 回归
 - `Tests/EditorToolbarTests.swift`：工具栏布局、交互、快捷键、剪贴板与浅 / 深色合成预览
+- `Tests/CopyPathTests.swift`：持久文件、当前标注、失败重试与路径剪贴板回归
 - `Resources/Info.plist`：菜单栏 App bundle 配置
 - `scripts/`：构建、运行与测试入口
 

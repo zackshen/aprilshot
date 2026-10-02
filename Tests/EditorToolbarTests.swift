@@ -182,15 +182,16 @@ struct EditorToolbarTests {
 
     static func checkCopy(_ window: NSWindow, button: NSButton, expected: Data, name: String) {
         // Only this generated fixture is copied on the ephemeral macOS runner.
-        let data = NSPasteboard.general.data(forType: .png)
-        check(data != nil, "\(name): clipboard contains a PNG")
-        if let data = data {
-            check(data == expected, "\(name): clipboard PNG bytes match the actual annotation export")
+        let path = NSPasteboard.general.string(forType: .string)
+        check(path?.hasPrefix("/") == true && path?.contains("file://") == false, "\(name): clipboard contains an absolute plain path")
+        if let path = path, let data = try? Data(contentsOf: URL(fileURLWithPath: path)) {
+            check(data == expected, "\(name): saved PNG bytes match the actual annotation export")
             let bitmap = NSBitmapImageRep(data: data)
-            check(bitmap?.pixelsWide == Int(sourceSize.width) && bitmap?.pixelsHigh == Int(sourceSize.height), "\(name): clipboard preserves source pixel dimensions")
-        }
-        check(NSPasteboard.general.data(forType: .tiff) != nil, "\(name): clipboard also provides TIFF compatibility")
-        check(button.title.contains("已复制"), "\(name): copy confirmation appears in the action button")
+            check(bitmap?.pixelsWide == Int(sourceSize.width) && bitmap?.pixelsHigh == Int(sourceSize.height), "\(name): saved copy preserves source pixel dimensions")
+        } else { check(false, "\(name): clipboard path is readable") }
+        check(NSPasteboard.general.data(forType: .png) == nil && NSPasteboard.general.data(forType: .tiff) == nil &&
+              NSPasteboard.general.string(forType: .fileURL) == nil, "\(name): clipboard only offers text, never image or file URL flavors")
+        check(button.title.contains("路径已复制"), "\(name): path copy confirmation appears in the action button")
         check(!window.isDocumentEdited, "\(name): copied version is marked exported")
     }
 
@@ -211,7 +212,8 @@ struct EditorToolbarTests {
         let sourcePNG = try AnnotationRenderer.png(image: source, annotations: [])
         try sourcePNG.write(to: artifacts.appendingPathComponent("toolbar-synthetic-source.png"))
         let sourceBitmap = NSBitmapImageRep(data: sourcePNG)!
-        let editor = EditorWindowController(image: source)
+        let store = CopiedImageStore(directory: artifacts.appendingPathComponent("toolbar-copied-images"))
+        let editor = EditorWindowController(image: source, imagePathCopier: ImagePathCopier(store: store))
         let window = editor.window!
         let content = window.contentView!
         guard let toolbar = find("editor.toolbar", in: content, as: NSView.self),
@@ -236,6 +238,7 @@ struct EditorToolbarTests {
             check(!(control.toolTip ?? "").isEmpty, "\(control.identifier!.rawValue): has a discoverable tooltip")
             check(!control.refusesFirstResponder, "\(control.identifier!.rawValue): permits keyboard focus")
         }
+        check(copy.title.contains("复制路径") && copy.accessibilityLabel()?.contains("路径") == true && copy.toolTip?.contains("本机 Codex CLI") == true, "copy label and tooltip describe persistent file paths")
         check(brush.toolTip?.contains("B") == true && text.toolTip?.contains("T") == true, "tool tooltips expose B/T shortcuts")
         check(!undo.isEnabled && !redo.isEnabled, "empty history disables both history actions")
         checkTool(editor, expected: .brush, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "initial")
@@ -347,6 +350,17 @@ struct EditorToolbarTests {
         let expectedClipboardPNG = try editor.canvas.exportPNG()
         copy.performClick(nil)
         checkCopy(window, button: copy, expected: expectedClipboardPNG, name: "copy button")
+        let firstCopiedPath = NSPasteboard.general.string(forType: .string)
+        for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: false)
+            layout(window)
+            checkLayout(editor, toolbar: toolbar, controls: controls, name: "copy feedback minimum \(theme)")
+            let captionWidth = copy.attributedTitle.size().width + (copy.image?.size.width ?? 0) + 12
+            check(captionWidth <= copy.bounds.width, "\(theme): successful copy caption and icon fit at minimum window size")
+            _ = try render(content, name: "toolbar-\(theme)-copy-feedback-minimum")
+        }
+        window.setContentSize(NSSize(width: 1260, height: 820))
         layout(window)
         checkLayout(editor, toolbar: toolbar, controls: controls, name: "copy feedback")
         _ = try render(content, name: "toolbar-dark-copy-feedback")
@@ -356,6 +370,8 @@ struct EditorToolbarTests {
         check(editor.canvas.history.items.count == 2 && !redo.isEnabled && !window.isDocumentEdited, "Shift-Command-Z restores the copied version and its export state")
         check(window.performKeyEquivalent(with: key(editor.canvas, "c", code: 8, modifiers: [.command, .shift])), "Shift-Command-C is handled by the real editor window")
         checkCopy(window, button: copy, expected: expectedClipboardPNG, name: "copy shortcut")
+        check(NSPasteboard.general.string(forType: .string) != firstCopiedPath, "repeated copy creates a new path")
+        check(firstCopiedPath.flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) } == expectedClipboardPNG, "earlier copied path remains readable and unchanged")
         layout(window)
         check(content.subviews.count == 2 && near(editor.canvas.frame.minY, content.bounds.minY), "copy shortcut confirmation does not create a footer")
         for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {

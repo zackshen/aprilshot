@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         captureItem = menu.addItem(withTitle: "截取区域    ⌘⇧2", action: #selector(captureRegion(_:)), keyEquivalent: "")
         captureItem.target = self
+        menu.addItem(withTitle: "打开已复制图片文件夹…", action: #selector(openCopiedImages(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "使用说明…", action: #selector(showHelp(_:)), keyEquivalent: "").target = self
         menu.addItem(withTitle: "屏幕录制设置…", action: #selector(openScreenSettings(_:)), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -141,8 +142,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(url)
         }
     }
+    @objc private func openCopiedImages(_ sender: Any?) {
+        do {
+            let directory = try CopiedImageStore.exportsDirectory()
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            if !NSWorkspace.shared.open(directory) { showMessage("无法打开已复制图片文件夹：\(directory.path)") }
+        } catch { showMessage("无法打开已复制图片文件夹：\(error.localizedDescription)") }
+    }
     @objc private func showHelp(_ sender: Any?) {
-        showMessage("1. 按 ⌘⇧2 或点击“截取区域”，拖出区域，Esc 取消。\n2. 用画笔拖动标注；切到文字后点击图片输入，⌘Return 完成，Esc 放弃当前文字。\n3. ⌘Z 撤销，⇧⌘Z 重做。输入文字时沿用系统文本编辑快捷键。\n4. ⇧⌘C 复制整张图片；⌘S 另存为 PNG。\n5. 关闭标注窗口后仍驻留菜单栏。需要开机启动时，可在系统设置的登录项中手动添加 AprilShot。")
+        showMessage("1. 按 ⌘⇧2 或点击“截取区域”，拖出区域，Esc 取消。\n2. 用画笔拖动标注；切到文字后点击图片输入，⌘Return 完成，Esc 放弃当前文字。\n3. ⌘Z 撤销，⇧⌘Z 重做。输入文字时沿用系统文本编辑快捷键。\n4. ⇧⌘C 保存标注 PNG 并复制绝对路径，粘贴到本机 Codex CLI 的提示中即可让它读取；⌘S 另存为 PNG。\n复制的图片会一直保留，可从菜单“打开已复制图片文件夹…”查看或手动清理。远程环境无法直接读取本机路径。\n5. 关闭标注窗口后仍驻留菜单栏。需要开机启动时，可在系统设置的登录项中手动添加 AprilShot。")
     }
     @objc private func showAbout(_ sender: Any?) {
         showMessage("AprilShot 0.1.0\n原生 macOS 菜单栏截图与轻量标注。\n截图与标注仅在本机处理，无网络请求、遥测或第三方依赖。")
