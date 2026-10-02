@@ -16,6 +16,13 @@ xcrun swiftc -swift-version 5 -parse-as-library -sdk "$SDK" \
   -module-cache-path "$ROOT/.build/module-cache" -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers \
   "$ROOT"/Sources/Core/*.swift "$ROOT/Sources/Annotation.swift" \
   "$ROOT/Sources/ScreenshotCapture.swift" "$ROOT/Sources/CanvasView.swift" \
-  "$ROOT/Sources/EditorWindowController.swift" "$ROOT/Tests/CaptureRenderingTests.swift" \
+  "$ROOT/Sources/EditorToolbar.swift" "$ROOT/Sources/EditorWindowController.swift" "$ROOT/Tests/CaptureRenderingTests.swift" \
   -o "$ROOT/.build/AprilShotCaptureTests"
 APRILSHOT_TEST_ARTIFACTS="$ROOT/.build/rendering-artifacts" "$ROOT/.build/AprilShotCaptureTests"
+xcrun swiftc -swift-version 5 -parse-as-library -sdk "$SDK" \
+  -module-cache-path "$ROOT/.build/module-cache" -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers \
+  "$ROOT"/Sources/Core/*.swift "$ROOT/Sources/Annotation.swift" \
+  "$ROOT/Sources/ScreenshotCapture.swift" "$ROOT/Sources/CanvasView.swift" \
+  "$ROOT/Sources/EditorToolbar.swift" "$ROOT/Sources/EditorWindowController.swift" "$ROOT/Tests/EditorToolbarTests.swift" \
+  -o "$ROOT/.build/AprilShotToolbarTests"
+APRILSHOT_TEST_ARTIFACTS="$ROOT/.build/rendering-artifacts" "$ROOT/.build/AprilShotToolbarTests"
