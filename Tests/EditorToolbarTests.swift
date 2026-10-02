@@ -356,6 +356,7 @@ struct EditorToolbarTests {
             window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: false)
             layout(window)
             checkLayout(editor, toolbar: toolbar, controls: controls, name: "copy feedback minimum \(theme)")
+            check(copy.title.contains("路径已复制"), "\(theme): minimum-size render includes the actual success caption")
             let captionWidth = copy.attributedTitle.size().width + (copy.image?.size.width ?? 0) + 12
             check(captionWidth <= copy.bounds.width, "\(theme): successful copy caption and icon fit at minimum window size")
             _ = try render(content, name: "toolbar-\(theme)-copy-feedback-minimum")

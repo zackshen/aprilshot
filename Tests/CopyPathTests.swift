@@ -33,13 +33,28 @@ struct CopyPathTests {
         descendants(editor.window!.contentView!).first { $0.identifier?.rawValue == "editor.export.copy" } as! NSButton
     }
     static func dismissError(_ editor: EditorWindowController) {
-        if let sheet = editor.window?.attachedSheet { editor.window?.endSheet(sheet); sheet.orderOut(nil) }
+        check(editor.window?.attachedSheet != nil, "copy failure presents an error sheet")
+        if let sheet = editor.window?.attachedSheet {
+            editor.window?.endSheet(sheet)
+            sheet.orderOut(nil)
+            let deadline = Date().addingTimeInterval(1)
+            while editor.window?.attachedSheet != nil && Date() < deadline {
+                RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+            }
+        }
+        check(editor.window?.attachedSheet == nil, "error sheet can be dismissed for retry")
     }
     static func clipboardPNG(_ pasteboard: NSPasteboard) throws -> (URL, Data) {
         let path = pasteboard.string(forType: .string) ?? ""
         check(path.hasPrefix("/") && !path.hasPrefix("file:") && !path.contains("\\ "), "clipboard is an unescaped absolute path")
         check(path.hasSuffix(".png"), "path names a PNG")
-        check(pasteboard.types == [.string], "only plain text is exposed to terminal paste")
+        // AppKit may advertise the legacy NSStringPboardType alias as well as
+        // public.utf8-plain-text; both represent the same plain text payload.
+        let types = pasteboard.types ?? []
+        check(types.contains(.string) && types.allSatisfy { $0 == .string || $0.rawValue == "NSStringPboardType" },
+              "only plain text (including its system alias) is exposed: \(types.map { $0.rawValue })")
+        check(pasteboard.data(forType: .png) == nil && pasteboard.data(forType: .tiff) == nil &&
+              pasteboard.string(forType: .fileURL) == nil, "terminal paste offers no image or file-URL alternative")
         let url = URL(fileURLWithPath: path)
         check(FileManager.default.isReadableFile(atPath: path), "copied image exists and is readable")
         return (url, try Data(contentsOf: url))
@@ -92,9 +107,28 @@ struct CopyPathTests {
         let textPoint = CGPoint(x: 140, y: 360)
         canvas.mouseDown(with: mouse(canvas, at: textPoint, type: .leftMouseDown))
         let field = canvas.subviews.compactMap { $0 as? NSTextView }.first!
+        // Our shortcut interceptor yields Command-C to the real text responder.
+        // Invoke that responder separately; offscreen tests do not install the
+        // app menu or claim complete system keyboard routing.
+        field.string = "copy selected text"
+        field.didChangeText()
+        field.setSelectedRange(NSRange(location: 5, length: 8))
+        let nativeCopy = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0,
+                                        windowNumber: window.windowNumber, context: nil, characters: "c",
+                                        charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8)!
+        let attemptsBeforeTextCopy = writeAttempts
+        check((window as! EditorWindow).handleShortcut?(nativeCopy) == false, "Command-C interceptor yields during text input")
+        field.copy(nil)
+        check(NSPasteboard.general.string(forType: .string) == "selected" && canvas.isEditingText,
+              "native text Copy keeps selected text semantics and the editor open")
+        check(writeAttempts == attemptsBeforeTextCopy && canvas.history.items.count == 1,
+              "text Copy does not export an image or commit the draft")
+        field.string = ""
+        field.setSelectedRange(NSRange(location: 0, length: 0))
         // Include active marked text, as supplied by a real input method.
         field.setMarkedText("中文标注\nRead this image", selectedRange: NSRange(location: 4, length: 0), replacementRange: NSRange(location: NSNotFound, length: 0))
         field.didChangeText()
+        check(field.hasMarkedText(), "test exercises active input-method composition")
         check(canvas.isEditingText && canvas.hasPendingContent, "copy begins while marked text is still being edited")
         let shortcut = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.command, .shift], timestamp: 0,
                                       windowNumber: window.windowNumber, context: nil, characters: "c",
