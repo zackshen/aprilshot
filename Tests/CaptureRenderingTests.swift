@@ -56,11 +56,14 @@ struct CaptureRenderingTests {
     }
 
     static func nearColor(_ actual: NSColor, _ expected: NSColor) -> Bool {
-        let a = actual.usingColorSpace(.sRGB)!
-        let e = expected.usingColorSpace(.sRGB)!
-        return abs(a.redComponent - e.redComponent) < 0.15 &&
-            abs(a.greenComponent - e.greenComponent) < 0.15 &&
-            abs(a.blueComponent - e.blueComponent) < 0.15 && a.alphaComponent > 0.95
+        let a = actual.usingColorSpace(.deviceRGB)!
+        let e = expected.usingColorSpace(.deviceRGB)!
+        // Color conversion may return extended-range components for saturated
+        // NSColor primaries; the 8-bit screenshot/export clamps them to [0, 1].
+        func channel(_ value: CGFloat) -> CGFloat { min(1, max(0, value)) }
+        return abs(channel(a.redComponent) - channel(e.redComponent)) < 0.15 &&
+            abs(channel(a.greenComponent) - channel(e.greenComponent)) < 0.15 &&
+            abs(channel(a.blueComponent) - channel(e.blueComponent)) < 0.15 && a.alphaComponent > 0.95
     }
 
     static let samples: [(CGFloat, CGFloat, NSColor)] = [
@@ -131,7 +134,10 @@ struct CaptureRenderingTests {
             let annotated = NSBitmapImageRep(data: annotatedData)!
             check(nearColor(annotated.colorAt(x: 100, y: height - 100)!, .magenta), "canvas brush overlays screenshot")
             editor.canvas.undoAnnotation()
-            try checkExport(editor.canvas.exportPNG(), name: "undo-\(attempt).png")
+            let undoneData = try editor.canvas.exportPNG()
+            try checkExport(undoneData, name: "undo-\(attempt).png")
+            let undone = NSBitmapImageRep(data: undoneData)!
+            check(nearColor(undone.colorAt(x: 100, y: height - 100)!, .blue), "canvas undo removes annotation and restores source pixel")
             editor.canvas.redoAnnotation()
             let redone = NSBitmapImageRep(data: try editor.canvas.exportPNG())!
             check(nearColor(redone.colorAt(x: 100, y: height - 100)!, .magenta), "canvas redo restores annotation")
