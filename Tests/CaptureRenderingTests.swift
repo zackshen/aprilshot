@@ -56,14 +56,12 @@ struct CaptureRenderingTests {
     }
 
     static func nearColor(_ actual: NSColor, _ expected: NSColor) -> Bool {
-        let a = actual.usingColorSpace(.deviceRGB)!
-        let e = expected.usingColorSpace(.deviceRGB)!
-        // Color conversion may return extended-range components for saturated
-        // NSColor primaries; the 8-bit screenshot/export clamps them to [0, 1].
-        func channel(_ value: CGFloat) -> CGFloat { min(1, max(0, value)) }
-        return abs(channel(a.redComponent) - channel(e.redComponent)) < 0.15 &&
-            abs(channel(a.greenComponent) - channel(e.greenComponent)) < 0.15 &&
-            abs(channel(a.blueComponent) - channel(e.blueComponent)) < 0.15 && a.alphaComponent > 0.95
+        // These fixtures and rendered bitmaps encode 8-bit RGB primaries. Compare
+        // their sample values directly; re-converting an NSBitmapImageRep's
+        // calibrated color through the runner's display profile distorts blue.
+        return abs(actual.redComponent - expected.redComponent) < 0.15 &&
+            abs(actual.greenComponent - expected.greenComponent) < 0.15 &&
+            abs(actual.blueComponent - expected.blueComponent) < 0.15 && actual.alphaComponent > 0.95
     }
 
     static let samples: [(CGFloat, CGFloat, NSColor)] = [
