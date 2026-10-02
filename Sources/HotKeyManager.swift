@@ -41,7 +41,7 @@ final class HotKeyManager {
     struct HotKeyError: LocalizedError {
         let status: OSStatus
         var errorDescription: String? {
-            "无法注册 ⌘⇧2（错误 \(status)）。可能与其他 App 的快捷键冲突。你仍可使用菜单栏的“截取区域”。"
+            "⌘⇧2 注册失败（\(status)），可能与其他应用冲突。可从菜单栏点击“截图”。"
         }
     }
 }

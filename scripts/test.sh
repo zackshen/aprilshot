@@ -33,3 +33,8 @@ xcrun swiftc -swift-version 5 -parse-as-library -sdk "$SDK" \
   "$ROOT/Sources/EditorToolbar.swift" "$ROOT/Sources/EditorWindowController.swift" "$ROOT/Tests/CopyPathTests.swift" \
   -o "$ROOT/.build/AprilShotCopyPathTests"
 "$ROOT/.build/AprilShotCopyPathTests"
+xcrun swiftc -swift-version 5 -parse-as-library -sdk "$SDK" \
+  -module-cache-path "$ROOT/.build/module-cache" -framework AppKit \
+  "$ROOT/Sources/StatusMenu.swift" "$ROOT/Tests/StatusMenuTests.swift" \
+  -o "$ROOT/.build/AprilShotStatusMenuTests"
+APRILSHOT_TEST_ARTIFACTS="$ROOT/.build/rendering-artifacts" "$ROOT/.build/AprilShotStatusMenuTests"

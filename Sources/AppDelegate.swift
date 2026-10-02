@@ -58,21 +58,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     private func buildStatusMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        if let image = NSImage(systemSymbolName: "viewfinder", accessibilityDescription: "AprilShot 截图") {
-            image.isTemplate = true
-            statusItem.button?.image = image
-        } else { statusItem.button?.title = "截" }
-        statusItem.button?.toolTip = "AprilShot · ⌘⇧2 截取区域"
-        let menu = NSMenu()
-        captureItem = menu.addItem(withTitle: "截取区域    ⌘⇧2", action: #selector(captureRegion(_:)), keyEquivalent: "")
-        captureItem.target = self
-        menu.addItem(withTitle: "打开已复制图片文件夹…", action: #selector(openCopiedImages(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "使用说明…", action: #selector(showHelp(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "屏幕录制设置…", action: #selector(openScreenSettings(_:)), keyEquivalent: "").target = self
-        menu.addItem(.separator())
-        menu.addItem(withTitle: "关于 AprilShot", action: #selector(showAbout(_:)), keyEquivalent: "").target = self
-        menu.addItem(withTitle: "退出 AprilShot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        statusItem.menu = menu
+        statusItem.button?.image = StatusIcon.makeImage()
+        statusItem.button?.toolTip = "AprilShot · ⌘⇧2"
+        statusItem.button?.setAccessibilityLabel("AprilShot")
+        statusItem.button?.setAccessibilityHelp("截图，⌘⇧2")
+        let statusMenu = StatusMenu(target: self, capture: #selector(captureRegion(_:)),
+                                    images: #selector(openCopiedImages(_:)),
+                                    permissions: #selector(openScreenSettings(_:)),
+                                    help: #selector(showHelp(_:)), about: #selector(showAbout(_:)))
+        captureItem = statusMenu.captureItem
+        statusItem.menu = statusMenu.menu
     }
     @objc private func captureRegion(_ sender: Any?) {
         guard !capturePending, !capture.isRunning, !showingAlert else { return }
@@ -131,7 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = "需要屏幕录制权限"
-        alert.informativeText = "请在“系统设置 → 隐私与安全性 → 屏幕录制”（新版本可能显示为“屏幕与系统音频录制”）中允许 AprilShot，然后完全退出并重新打开 App。无需辅助功能或输入监控权限。"
+        alert.informativeText = "在系统设置的“隐私与安全性 → 屏幕录制”中允许 AprilShot，然后退出并重新打开。\n新版 macOS 可能显示为“屏幕与系统音频录制”。"
         alert.addButton(withTitle: "打开系统设置")
         alert.addButton(withTitle: "稍后")
         if alert.runModal() == .alertFirstButtonReturn { openScreenSettings(nil) }
@@ -150,11 +145,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch { showMessage("无法打开已复制图片文件夹：\(error.localizedDescription)") }
     }
     @objc private func showHelp(_ sender: Any?) {
-        showMessage("1. 按 ⌘⇧2 或点击“截取区域”，拖出区域，Esc 取消。\n2. 用画笔拖动标注；切到文字后点击图片输入，⌘Return 完成，Esc 放弃当前文字。\n3. ⌘Z 撤销，⇧⌘Z 重做。输入文字时沿用系统文本编辑快捷键。\n4. ⇧⌘C 保存标注 PNG 并复制绝对路径，粘贴到本机 Codex CLI 的提示中即可让它读取；⌘S 另存为 PNG。\n复制的图片会一直保留，可从菜单“打开已复制图片文件夹…”查看或手动清理。远程环境无法直接读取本机路径。\n5. 关闭标注窗口后仍驻留菜单栏。需要开机启动时，可在系统设置的登录项中手动添加 AprilShot。")
+        showMessage(StatusMenu.helpText)
     }
     @objc private func showAbout(_ sender: Any?) {
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.3"
-        showMessage("AprilShot \(version)\n原生 macOS 菜单栏截图与轻量标注。\n截图与标注仅在本机处理，无网络请求、遥测或第三方依赖。")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.4"
+        showMessage("AprilShot \(version)\n截图与标注，全在本机。")
     }
     private func showMessage(_ text: String) {
         guard !showingAlert else { return }
