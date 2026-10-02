@@ -114,11 +114,13 @@ SIGN_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build.sh
 - `Sources/HotKeyManager.swift`：Carbon 全局快捷键
 - `Sources/ScreenshotCapture.swift`：系统区域截图和临时文件清理
 - `Sources/CanvasView.swift`：画笔、内联文本和画布事件
-- `Sources/EditorWindowController.swift`：工具栏、复制、保存和防丢失提示
+- `Sources/EditorWindowController.swift`：工具栏布局、复制、保存和防丢失提示
+- `Sources/EditorToolbar.swift`：原生工具按钮、分组外观与选中态
 - `Sources/Annotation.swift`：共享预览 / PNG 绘制器
 - `Sources/Core/`：可测试的坐标与撤销历史
 - `Tests/CoreTests.swift`：核心自动断言测试
 - `Tests/CaptureRenderingTests.swift`：文件清理后的真实 AppKit 画布与 PNG 回归
+- `Tests/EditorToolbarTests.swift`：工具栏布局、交互、快捷键、剪贴板与浅 / 深色合成预览
 - `Resources/Info.plist`：菜单栏 App bundle 配置
 - `scripts/`：构建、运行与测试入口
 
