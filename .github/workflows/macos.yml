@@ -1,0 +1,24 @@
+name: macOS build and tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build native app
+        run: ./scripts/build.sh
+      - name: Run geometry, history and PNG renderer tests
+        run: ./scripts/test.sh
+      - name: Package unsigned development app
+        run: ditto -c -k --sequesterRsrc --keepParent build/AprilShot.app build/AprilShot-macOS.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AprilShot-macOS-development
+          path: build/AprilShot-macOS.zip
+          retention-days: 7
