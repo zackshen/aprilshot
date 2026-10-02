@@ -98,7 +98,9 @@ SIGN_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build.sh
 
 `./scripts/test.sh` 运行真实 Swift 断言测试，覆盖历史记录分支、导出状态恢复、画布坐标变换、边界拖动、PNG 尺寸与方向、线条 / 单点 / 中文文字绘制。
 
-`.github/workflows/macos.yml` 会在 push / pull request 时于 macOS runner 编译完整 App、执行这些测试，并提供一个 7 天保留的开发版构建产物。CI 不代表屏幕授权或全局热键等交互验收；CI 产物也未经公证。
+另有截图生命周期回归：将合成彩色 PNG 走实际截图加载器，删除临时文件后再首次绘制真实 `CanvasView`，检查底图像素、方向、窗口缩放、重复截图、画笔、撤销 / 重做与原图尺寸导出；独立覆盖先导出后预览，以及损坏 / 不完整文件。CI 保存合成源图、编辑器画面和导出 PNG，可下载检查。测试不会读取或上传用户截图。
+
+`.github/workflows/macos.yml` 会在 push / pull request 时于 macOS runner 编译完整 App、执行这些测试，并提供 7 天保留的开发版构建产物和渲染证据。CI 不代表屏幕授权或全局热键等交互验收；CI 产物也未经公证。
 
 这份源码最初在 Linux 工作区编写，该环境无 Swift / Xcode / macOS SDK。交付时的实际检查状态见 [VALIDATION.md](VALIDATION.md)，不要把测试脚本的存在理解为已通过 macOS 运行测试。
 
@@ -111,7 +113,8 @@ SIGN_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build.sh
 - `Sources/EditorWindowController.swift`：工具栏、复制、保存和防丢失提示
 - `Sources/Annotation.swift`：共享预览 / PNG 绘制器
 - `Sources/Core/`：可测试的坐标与撤销历史
-- `Tests/CoreTests.swift`：自动断言测试
+- `Tests/CoreTests.swift`：核心自动断言测试
+- `Tests/CaptureRenderingTests.swift`：文件清理后的真实 AppKit 画布与 PNG 回归
 - `Resources/Info.plist`：菜单栏 App bundle 配置
 - `scripts/`：构建、运行与测试入口
 

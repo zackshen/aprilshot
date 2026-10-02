@@ -108,6 +108,8 @@ struct CaptureRenderingTests {
                 continue
             }
             check(image.width == width && image.height == height, "loaded screenshot dimensions are valid")
+            // Defer first display past the cleanup callback/run-loop boundary.
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
             let editor = EditorWindowController(image: image)
             let window = editor.window!
             window.contentView!.layoutSubtreeIfNeeded()
@@ -135,9 +137,15 @@ struct CaptureRenderingTests {
             check(nearColor(redone.colorAt(x: 100, y: height - 100)!, .magenta), "canvas redo restores annotation")
             window.orderOut(nil)
         }
+        // Export-first uses a fresh load, so preview cannot warm its decode cache.
+        if let exportFirst = try loadThenDelete(png) {
+            try checkExport(AnnotationRenderer.png(image: exportFirst, annotations: []), name: "export-first.png")
+        } else { check(false, "export-first source loads") }
         let invalid = FileManager.default.temporaryDirectory.appendingPathComponent("AprilShot-invalid-\(UUID().uuidString).png")
         try Data("not a PNG".utf8).write(to: invalid)
         check(ScreenshotCapture.loadImage(at: invalid) == nil, "invalid capture cannot open a blank editor")
+        try Data(png.prefix(80)).write(to: invalid)
+        check(ScreenshotCapture.loadImage(at: invalid) == nil, "truncated capture is rejected")
         try FileManager.default.removeItem(at: invalid)
         check(ScreenshotCapture.loadImage(at: invalid) == nil, "missing capture cannot open a blank editor")
         print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) capture and AppKit rendering assertions, \(failures) failures")
