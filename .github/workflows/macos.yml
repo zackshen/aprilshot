@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build native app
         run: ./scripts/build.sh
-      - name: Run geometry, history and PNG renderer tests
+      - name: Run core, capture lifetime and AppKit rendering tests
         run: ./scripts/test.sh
       - name: Package unsigned development app
         run: ditto -c -k --sequesterRsrc --keepParent build/AprilShot.app build/AprilShot-macOS.zip
@@ -21,4 +21,12 @@ jobs:
         with:
           name: AprilShot-macOS-development
           path: build/AprilShot-macOS.zip
+          retention-days: 7
+      - name: Upload synthetic rendering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: AprilShot-rendering-evidence
+          path: .build/rendering-artifacts
+          if-no-files-found: warn
           retention-days: 7

@@ -11,6 +11,12 @@ final class ScreenshotCapture {
     private var process: Process?
     var isRunning: Bool { process != nil }
 
+    // Kept separate so the temporary-file lifetime can be exercised by rendering tests.
+    static func loadImage(at url: URL) -> CGImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+    }
+
     func start(completion: @escaping (Result) -> Void) {
         guard process == nil else { return }
         let directory = FileManager.default.temporaryDirectory
@@ -37,8 +43,7 @@ final class ScreenshotCapture {
                 }
                 self.process = nil
                 defer { try? FileManager.default.removeItem(at: directory) }
-                if let source = CGImageSourceCreateWithURL(output as CFURL, nil),
-                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                if let image = Self.loadImage(at: output) {
                     completion(.captured(image))
                 } else if !FileManager.default.fileExists(atPath: output.path) {
                     // Escape and Control-to-clipboard can both finish without a file.
