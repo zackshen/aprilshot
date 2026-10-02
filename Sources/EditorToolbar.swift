@@ -10,7 +10,7 @@ final class EditorToolbarButton: NSButton {
 
     init(title: String, symbol: String, label: String, target: AnyObject?, action: Selector?) {
         super.init(frame: .zero)
-        self.title = title
+        self.title = title.isEmpty ? "" : "\u{2009}" + title
         self.target = target
         self.action = action
         setButtonType(.momentaryPushIn)
@@ -48,7 +48,7 @@ final class EditorToolbarButton: NSButton {
         refreshAppearance()
     }
     func setCaption(_ text: String) {
-        title = text
+        title = text.isEmpty ? "" : "\u{2009}" + text
         refreshAppearance()
     }
     private func refreshAppearance() {

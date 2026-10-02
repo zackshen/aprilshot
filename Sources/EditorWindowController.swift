@@ -115,6 +115,10 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
 
         colorWell.color = .systemRed
         colorWell.colorWellStyle = .minimal
+        colorWell.isBordered = false
+        colorWell.wantsLayer = true
+        colorWell.layer?.cornerRadius = 6
+        colorWell.layer?.masksToBounds = true
         colorWell.target = self
         colorWell.action = #selector(changeColor(_:))
         colorWell.identifier = NSUserInterfaceItemIdentifier("editor.color")

@@ -39,6 +39,15 @@ struct EditorToolbarTests {
             abs(a.blueComponent - b.blueComponent) < 0.08 && abs(a.alphaComponent - b.alphaComponent) < 0.08
     }
 
+    static func samePixel(_ actual: NSColor, _ expected: NSColor) -> Bool {
+        // Compare the encoded sRGB sample values, as in CaptureRenderingTests.
+        // colorAt's NSColor wrapper must not color-convert the PNG bytes again.
+        return abs(actual.redComponent - expected.redComponent) < 0.08 &&
+            abs(actual.greenComponent - expected.greenComponent) < 0.08 &&
+            abs(actual.blueComponent - expected.blueComponent) < 0.08 &&
+            abs(actual.alphaComponent - expected.alphaComponent) < 0.08
+    }
+
     static func fixture() -> CGImage {
         let context = CGContext(data: nil, width: Int(sourceSize.width), height: Int(sourceSize.height),
                                 bitsPerComponent: 8, bytesPerRow: 0,
@@ -171,10 +180,26 @@ struct EditorToolbarTests {
         check(control.sendAction(control.action, to: control.target), "\(control.identifier!.rawValue): dispatches its action")
     }
 
+    static func checkCopy(_ window: NSWindow, button: NSButton, expected: Data, name: String) {
+        // Only this generated fixture is copied on the ephemeral macOS runner.
+        let data = NSPasteboard.general.data(forType: .png)
+        check(data != nil, "\(name): clipboard contains a PNG")
+        if let data = data {
+            check(data == expected, "\(name): clipboard PNG bytes match the actual annotation export")
+            let bitmap = NSBitmapImageRep(data: data)
+            check(bitmap?.pixelsWide == Int(sourceSize.width) && bitmap?.pixelsHigh == Int(sourceSize.height), "\(name): clipboard preserves source pixel dimensions")
+        }
+        check(NSPasteboard.general.data(forType: .tiff) != nil, "\(name): clipboard also provides TIFF compatibility")
+        check(button.title.contains("已复制"), "\(name): copy confirmation appears in the action button")
+        check(!window.isDocumentEdited, "\(name): copied version is marked exported")
+    }
+
     static func checkTool(_ editor: EditorWindowController, expected: CanvasView.Tool, brush: NSButton, text: NSButton,
                           brushSettings: NSView, textSettings: NSView, name: String) {
         check(editor.canvas.tool == expected, "\(name): canvas tool matches")
         check(brush.state == (expected == .brush ? .on : .off) && text.state == (expected == .text ? .on : .off), "\(name): precisely one tool is selected")
+        check((brush.accessibilityValue() as? NSNumber)?.intValue == (expected == .brush ? 1 : 0) &&
+              (text.accessibilityValue() as? NSNumber)?.intValue == (expected == .text ? 1 : 0), "\(name): accessibility selection matches the active tool")
         check(brushSettings.isHidden == (expected != .brush) && textSettings.isHidden == (expected != .text), "\(name): only the selected tool's settings are shown")
     }
 
@@ -264,16 +289,16 @@ struct EditorToolbarTests {
         try brushPNG.write(to: artifacts.appendingPathComponent("toolbar-brush-export.png"))
         let brushBitmap = NSBitmapImageRep(data: brushPNG)!
         let px = Int(point.x), py = Int(sourceSize.height - point.y)
-        check(sameColor(brushBitmap.colorAt(x: px, y: py)!, annotationColor), "actual PNG contains the toolbar-configured brush")
+        check(samePixel(brushBitmap.colorAt(x: px, y: py)!, annotationColor), "actual PNG contains the toolbar-configured brush")
         undo.performClick(nil)
         check(editor.canvas.history.items.isEmpty && !undo.isEnabled && redo.isEnabled, "undo button updates history and enabled states")
         let undonePNG = try editor.canvas.exportPNG()
         try undonePNG.write(to: artifacts.appendingPathComponent("toolbar-undo-export.png"))
-        check(sameColor(NSBitmapImageRep(data: undonePNG)!.colorAt(x: px, y: py)!, sourceBitmap.colorAt(x: px, y: py)!), "undo restores the synthetic source pixel")
+        check(samePixel(NSBitmapImageRep(data: undonePNG)!.colorAt(x: px, y: py)!, sourceBitmap.colorAt(x: px, y: py)!), "undo restores the synthetic source pixel")
         redo.performClick(nil)
         check(editor.canvas.history.items.count == 1 && undo.isEnabled && !redo.isEnabled, "redo button restores history and enabled states")
         let redonePNG = try editor.canvas.exportPNG()
-        check(sameColor(NSBitmapImageRep(data: redonePNG)!.colorAt(x: px, y: py)!, annotationColor), "redo restores the exported brush pixel")
+        check(samePixel(NSBitmapImageRep(data: redonePNG)!.colorAt(x: px, y: py)!, annotationColor), "redo restores the exported brush pixel")
 
         text.performClick(nil)
         font.selectItem(withTitle: "48")
@@ -310,7 +335,7 @@ struct EditorToolbarTests {
         var changedPixels = 0
         for y in stride(from: 735, to: 820, by: 2) {
             for x in stride(from: 340, to: 850, by: 2) {
-                if !sameColor(annotated.colorAt(x: x, y: y)!, brushBitmap.colorAt(x: x, y: y)!) { changedPixels += 1 }
+                if !samePixel(annotated.colorAt(x: x, y: y)!, brushBitmap.colorAt(x: x, y: y)!) { changedPixels += 1 }
             }
         }
         check(changedPixels > 100, "actual PNG renders the text annotation (\(changedPixels) sampled changed pixels)")
@@ -318,6 +343,21 @@ struct EditorToolbarTests {
         check(editor.canvas.history.items.count == 1 && redo.isEnabled, "text annotation is one undo step")
         redo.performClick(nil)
         check(editor.canvas.history.items.count == 2 && !redo.isEnabled, "text annotation is one redo step")
+
+        let expectedClipboardPNG = try editor.canvas.exportPNG()
+        copy.performClick(nil)
+        checkCopy(window, button: copy, expected: expectedClipboardPNG, name: "copy button")
+        layout(window)
+        checkLayout(editor, toolbar: toolbar, controls: controls, name: "copy feedback")
+        _ = try render(content, name: "toolbar-dark-copy-feedback")
+        check(window.performKeyEquivalent(with: key(editor.canvas, "z", code: 6, modifiers: .command)), "Command-Z is handled by the real editor window")
+        check(editor.canvas.history.items.count == 1 && redo.isEnabled && window.isDocumentEdited, "Command-Z undoes one annotation and marks the copied version changed")
+        check(window.performKeyEquivalent(with: key(editor.canvas, "z", code: 6, modifiers: [.command, .shift])), "Shift-Command-Z is handled by the real editor window")
+        check(editor.canvas.history.items.count == 2 && !redo.isEnabled && !window.isDocumentEdited, "Shift-Command-Z restores the copied version and its export state")
+        check(window.performKeyEquivalent(with: key(editor.canvas, "c", code: 8, modifiers: [.command, .shift])), "Shift-Command-C is handled by the real editor window")
+        checkCopy(window, button: copy, expected: expectedClipboardPNG, name: "copy shortcut")
+        layout(window)
+        check(content.subviews.count == 2 && near(editor.canvas.frame.minY, content.bounds.minY), "copy shortcut confirmation does not create a footer")
         for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
             window.appearance = NSAppearance(named: appearance)
             text.performClick(nil)
