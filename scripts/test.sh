@@ -12,3 +12,10 @@ xcrun swiftc -swift-version 5 -parse-as-library -sdk "$SDK" \
   "$ROOT"/Sources/Core/*.swift "$ROOT/Sources/Annotation.swift" "$ROOT/Tests/CoreTests.swift" \
   -o "$ROOT/.build/AprilShotTests"
 "$ROOT/.build/AprilShotTests"
+xcrun swiftc -swift-version 5 -parse-as-library -sdk "$SDK" \
+  -module-cache-path "$ROOT/.build/module-cache" -framework AppKit -framework ImageIO -framework UniformTypeIdentifiers \
+  "$ROOT"/Sources/Core/*.swift "$ROOT/Sources/Annotation.swift" \
+  "$ROOT/Sources/ScreenshotCapture.swift" "$ROOT/Sources/CanvasView.swift" \
+  "$ROOT/Sources/EditorWindowController.swift" "$ROOT/Tests/CaptureRenderingTests.swift" \
+  -o "$ROOT/.build/AprilShotCaptureTests"
+APRILSHOT_TEST_ARTIFACTS="$ROOT/.build/rendering-artifacts" "$ROOT/.build/AprilShotCaptureTests"

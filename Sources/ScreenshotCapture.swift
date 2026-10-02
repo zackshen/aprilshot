@@ -11,6 +11,30 @@ final class ScreenshotCapture {
     private var process: Process?
     var isRunning: Bool { process != nil }
 
+    /// Return an owned pixel snapshot before the private capture file is removed.
+    /// URL-backed ImageIO images decode lazily by default; keeping a CGImage alone
+    /// does not ensure that its pixels have been read before the next UI draw.
+    static func loadImage(at url: URL) -> CGImage? {
+        guard let data = try? Data(contentsOf: url, options: .uncached),
+              let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceGetStatus(source) == .statusComplete else { return nil }
+        let options: CFDictionary = [
+            kCGImageSourceShouldCache: true,
+            kCGImageSourceShouldCacheImmediately: true
+        ] as CFDictionary
+        guard let decoded = CGImageSourceCreateImageAtIndex(source, 0, options),
+              CGImageSourceGetStatusAtIndex(source, 0) == .statusComplete,
+              decoded.width > 0, decoded.height > 0,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: decoded.width, height: decoded.height,
+                                      bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        // Match the PNG export color space and detach from ImageIO's provider/cache.
+        context.setBlendMode(.copy)
+        context.draw(decoded, in: CGRect(x: 0, y: 0, width: decoded.width, height: decoded.height))
+        return context.makeImage()
+    }
+
     func start(completion: @escaping (Result) -> Void) {
         guard process == nil else { return }
         let directory = FileManager.default.temporaryDirectory
@@ -37,8 +61,7 @@ final class ScreenshotCapture {
                 }
                 self.process = nil
                 defer { try? FileManager.default.removeItem(at: directory) }
-                if let source = CGImageSourceCreateWithURL(output as CFURL, nil),
-                   let image = CGImageSourceCreateImageAtIndex(source, 0, nil) {
+                if let image = Self.loadImage(at: output) {
                     completion(.captured(image))
                 } else if !FileManager.default.fileExists(atPath: output.path) {
                     // Escape and Control-to-clipboard can both finish without a file.
