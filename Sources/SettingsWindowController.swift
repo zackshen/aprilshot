@@ -1,5 +1,13 @@
 import AppKit
 
+private final class SettingsContentView: NSView {
+    override var isOpaque: Bool { true }
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+    }
+}
+
 /// One reusable settings window. Edits are staged until Save; closing or Cancel
 /// never changes registration or preferences.
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
@@ -23,8 +31,9 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         self.preferences = preferences
         self.currentShortcut = currentShortcut
         self.apply = apply
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 548, height: 508),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 548, height: 376),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.contentView = SettingsContentView(frame: NSRect(x: 0, y: 0, width: 548, height: 376))
         window.title = "AprilShot 设置"
         window.isReleasedWhenClosed = false
         super.init(window: window)

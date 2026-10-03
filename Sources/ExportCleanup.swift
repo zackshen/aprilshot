@@ -90,7 +90,7 @@ struct ExportCleanup {
             guard directory.standardizedFileURL == plan.directory.standardizedFileURL,
                   try OwnedExportRegistry.validateDirectory(directory, create: false),
                   try ExportFileIdentity.read(directory).sameFile(as: plan.directoryIdentity) else {
-                throw ExportStorageError.unsafeDirectory
+                throw ExportStorageError.unsafeDirectory(directory.path)
             }
             var state = try OwnedExportRegistry.read(directory: directory)
             // A removed registry must not turn previously tracked names into legacy files.
@@ -121,7 +121,7 @@ struct ExportCleanup {
             do {
                 guard try OwnedExportRegistry.validateDirectory(directory, create: false),
                       try ExportFileIdentity.read(directory).sameFile(as: plan.directoryIdentity) else {
-                    throw ExportStorageError.unsafeDirectory
+                    throw ExportStorageError.unsafeDirectory(directory.path)
                 }
                 try OwnedExportRegistry.write(state.records, directory: directory)
             }
@@ -203,18 +203,18 @@ enum OwnedExportRegistry {
     @discardableResult
     static func validateDirectory(_ directory: URL, create: Bool) throws -> Bool {
         guard directory.isFileURL, directory.path.hasPrefix("/"),
-              !directory.pathComponents.contains("..") else { throw ExportStorageError.unsafeDirectory }
+              !directory.pathComponents.contains("..") else { throw ExportStorageError.unsafeDirectory(directory.path) }
         var current = URL(fileURLWithPath: "/", isDirectory: true)
         for component in directory.pathComponents.dropFirst() {
             current.appendPathComponent(component, isDirectory: true)
             do {
                 let attributes = try FileManager.default.attributesOfItem(atPath: current.path)
-                guard attributes[.type] as? FileAttributeType == .typeDirectory else { throw ExportStorageError.unsafeDirectory }
+                guard attributes[.type] as? FileAttributeType == .typeDirectory else { throw ExportStorageError.unsafeDirectory(current.path) }
             } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
                 if !create { return false }
                 try FileManager.default.createDirectory(at: current, withIntermediateDirectories: false)
                 let attributes = try FileManager.default.attributesOfItem(atPath: current.path)
-                guard attributes[.type] as? FileAttributeType == .typeDirectory else { throw ExportStorageError.unsafeDirectory }
+                guard attributes[.type] as? FileAttributeType == .typeDirectory else { throw ExportStorageError.unsafeDirectory(current.path) }
             }
         }
         return true
@@ -273,7 +273,7 @@ enum OwnedExportRegistry {
     }
 
     fileprivate static func write(_ records: [OwnedExportRecord], directory: URL) throws {
-        guard try validateDirectory(directory, create: false) else { throw ExportStorageError.unsafeDirectory }
+        guard try validateDirectory(directory, create: false) else { throw ExportStorageError.unsafeDirectory(directory.path) }
         let manifest = manifestURL(directory)
         // A pre-existing symlink, directory, or hard link is never followed/replaced.
         do { _ = try ExportFileIdentity.read(manifest, regularFile: true) }
@@ -336,10 +336,11 @@ enum OwnedExportRegistry {
 }
 
 enum ExportStorageError: LocalizedError {
-    case unsafeDirectory, unsafeFile, invalidManifest, changedManifest, trashDidNotMove
+    case unsafeDirectory(String)
+    case unsafeFile, invalidManifest, changedManifest, trashDidNotMove
     var errorDescription: String? {
         switch self {
-        case .unsafeDirectory: return "图片文件夹路径已变化或包含符号链接；为保护其他文件，已停止操作。"
+        case .unsafeDirectory(let path): return "图片文件夹路径已变化或包含符号链接；为保护其他文件，已停止操作。\n路径：\(path)"
         case .unsafeFile: return "图片或清理记录不是可安全处理的独立普通文件。"
         case .invalidManifest: return "图片清理记录无法识别；已保留全部图片。"
         case .changedManifest: return "图片清理记录已变化；请重新打开清理预览。"

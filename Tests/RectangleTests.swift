@@ -6,6 +6,10 @@ import AppKit
 struct RectangleTests {
     static var checks = 0
     static var failures = 0
+    struct TestFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
     static let size = CGSize(width: 960, height: 600)
     static let artifacts = URL(fileURLWithPath: ProcessInfo.processInfo.environment["APRILSHOT_TEST_ARTIFACTS"] ?? ".build/rendering-artifacts", isDirectory: true)
 
@@ -90,11 +94,34 @@ struct RectangleTests {
         let sample = bitmap.colorAt(x: x, y: y)!
         check(isRed(sample), "\(name): real CanvasView outline at bitmap (\(x), \(y)); got encoded \(sample)")
     }
-    static func main() throws {
+    static func copiedPNG(_ pasteboard: NSPasteboard, editor: EditorWindowController) throws -> (String, Data) {
+        let button = control("editor.export.copy", editor, as: NSButton.self)
+        let details: String
+        if let view = editor.window?.attachedSheet?.contentView {
+            details = descendants(view).compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: " | ")
+        } else { details = "no error sheet" }
+        guard button.title.contains("路径已复制"),
+              let path = pasteboard.string(forType: .string), path.hasPrefix("/"), path.hasSuffix(".png") else {
+            throw TestFailure(message: "Rectangle copy did not publish a PNG path: button=\(button.title); \(details)")
+        }
+        return (path, try Data(contentsOf: URL(fileURLWithPath: path)))
+    }
+    static func main() {
+        do { try runTests() }
+        catch { check(false, "stopped dependent rectangle checks: \(error.localizedDescription)") }
+        print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) rectangle input, history, export and lifecycle assertions, \(failures) failures")
+        if failures != 0 { exit(1) }
+    }
+    static func runTests() throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
         try FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)
-        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("AprilShot Rectangle \(UUID().uuidString)", isDirectory: true)
+        // Normal storage fixtures use the checkout; /var temp aliases must not
+        // make success-path tests depend on production symlink restrictions.
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent(".build/test-fixtures", isDirectory: true)
+            .appendingPathComponent("AprilShot Rectangle \(UUID().uuidString)", isDirectory: true)
+        print("Rectangle fixture: \(root.path)")
         defer { try? FileManager.default.removeItem(at: root) }
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -232,7 +259,11 @@ struct RectangleTests {
         canvas.brushWidth = 12
 
         // Copy path must export a live rectangle, keep the file and track the exact state.
+        let next = EditorWindowController(image: source, imagePathCopier: copier)
+        check(next.canvas.tool == .rectangle && next.canvas.history.items.isEmpty, "every fresh screenshot resets to rectangle and empty history")
+        next.window?.orderOut(nil)
         copy.performClick(nil)
+        _ = try copiedPNG(pasteboard, editor: editor)
         check(!window.isDocumentEdited, "empty capture copy sets the export baseline")
         start(canvas, from, to)
         check(window.isDocumentEdited, "a live rectangle marks the previously exported capture changed")
@@ -240,12 +271,11 @@ struct RectangleTests {
         check(!window.isDocumentEdited, "cancelling restores the exported-state indicator")
         start(canvas, from, to)
         copy.performClick(nil)
-        let copiedPath = pasteboard.string(forType: .string)!
-        let copiedPNG = try Data(contentsOf: URL(fileURLWithPath: copiedPath))
-        checkPNG(copiedPNG, name: "copy live rectangle")
+        let (copiedPath, copiedData) = try copiedPNG(pasteboard, editor: editor)
+        checkPNG(copiedData, name: "copy live rectangle")
         check(!canvas.hasPendingContent && canvas.history.items.count == 1 && !window.isDocumentEdited,
               "copy commits the live rectangle once and marks that state exported")
-        check(try canvas.exportPNG() == copiedPNG, "copy-path file and save's exportPNG pipeline use identical rendering")
+        check(try canvas.exportPNG() == copiedData, "copy-path file and save's exportPNG pipeline use identical rendering")
         canvas.mouseUp(with: mouse(canvas, to, .leftMouseUp))
         check(canvas.history.items.count == 1 && !window.isDocumentEdited, "late mouse-up after copy cannot duplicate or dirty the rectangle")
         canvas.undoAnnotation()
@@ -266,14 +296,10 @@ struct RectangleTests {
         check(sawClosePrompt && canvas.history.items.count == 2 && !canvas.hasPendingContent && window.isDocumentEdited,
               "close prompt keeps the committed rectangle and dirty state")
         copy.performClick(nil)
+        _ = try copiedPNG(pasteboard, editor: editor)
         check(editor.windowShouldClose(window), "copied version can close after continuing editing")
         window.close()
-        check(try Data(contentsOf: URL(fileURLWithPath: copiedPath)) == copiedPNG, "closing the editor preserves its previously copied rectangle PNG")
+        check(try Data(contentsOf: URL(fileURLWithPath: copiedPath)) == copiedData, "closing the editor preserves its previously copied rectangle PNG")
 
-        let next = EditorWindowController(image: source, imagePathCopier: copier)
-        check(next.canvas.tool == .rectangle && next.canvas.history.items.isEmpty, "every fresh screenshot resets to rectangle and empty history")
-        next.window?.orderOut(nil)
-        print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) rectangle input, history, export and lifecycle assertions, \(failures) failures")
-        if failures != 0 { exit(1) }
     }
 }

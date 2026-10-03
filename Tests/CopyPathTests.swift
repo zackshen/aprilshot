@@ -6,6 +6,10 @@ struct CopyPathTests {
     static var checks = 0
     static var failures = 0
     static let size = CGSize(width: 720, height: 480)
+    struct TestFailure: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
 
     static func check(_ condition: @autoclosure () throws -> Bool, _ message: String) {
         checks += 1
@@ -44,8 +48,15 @@ struct CopyPathTests {
         }
         check(editor.window?.attachedSheet == nil, "error sheet can be dismissed for retry")
     }
-    static func clipboardPNG(_ pasteboard: NSPasteboard) throws -> (URL, Data) {
-        let path = pasteboard.string(forType: .string) ?? ""
+    static func clipboardPNG(_ pasteboard: NSPasteboard, editor: EditorWindowController) throws -> (URL, Data) {
+        let details: String
+        if let view = editor.window?.attachedSheet?.contentView {
+            details = descendants(view).compactMap { ($0 as? NSTextField)?.stringValue }.joined(separator: " | ")
+        } else { details = "no error sheet" }
+        guard copyButton(editor).title.contains("路径已复制"),
+              let path = pasteboard.string(forType: .string), path.hasPrefix("/"), path.hasSuffix(".png") else {
+            throw TestFailure(message: "Copy did not publish a PNG path: button=\(copyButton(editor).title); \(details)")
+        }
         check(path.hasPrefix("/") && !path.hasPrefix("file:") && !path.contains("\\ "), "clipboard is an unescaped absolute path")
         check(path.hasSuffix(".png"), "path names a PNG")
         // AppKit may advertise the legacy NSStringPboardType alias as well as
@@ -59,10 +70,21 @@ struct CopyPathTests {
         check(FileManager.default.isReadableFile(atPath: path), "copied image exists and is readable")
         return (url, try Data(contentsOf: url))
     }
-    static func main() throws {
+    static func main() {
+        do { try runTests() }
+        catch { check(false, "stopped dependent copy checks: \(error.localizedDescription)") }
+        print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) persistent path copy assertions, \(failures) failures")
+        if failures != 0 { exit(1) }
+    }
+    static func runTests() throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
-        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("AprilShot copy path 测试 \(UUID().uuidString)", isDirectory: true)
+        // Keep normal success fixtures under the checkout, avoiding macOS's /var
+        // temp alias. Symlink rejection is exercised independently by cleanup tests.
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath, isDirectory: true)
+            .appendingPathComponent(".build/test-fixtures", isDirectory: true)
+            .appendingPathComponent("AprilShot copy path 测试 \(UUID().uuidString)", isDirectory: true)
+        print("Copy-path fixture: \(root.path)")
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         // Remove only this isolated fixture; production cleanup separately protects recent and currently copied exports.
         defer { try? FileManager.default.removeItem(at: root) }
@@ -92,7 +114,7 @@ struct CopyPathTests {
         canvas.mouseDragged(with: mouse(canvas, at: CGPoint(x: 300, y: 160), type: .leftMouseDragged))
         check(canvas.hasPendingContent && canvas.history.items.isEmpty, "test begins with an uncommitted stroke")
         button.performClick(nil) // Deliberately no mouseUp and no exportPNG before Copy.
-        let (brushURL, brushPNG) = try clipboardPNG(pasteboard)
+        let (brushURL, brushPNG) = try clipboardPNG(pasteboard, editor: editor!)
         check(!canvas.hasPendingContent && canvas.history.items.count == 1, "Copy finishes the pending stroke exactly once")
         check(!window.isDocumentEdited && button.title.contains("路径已复制"), "successful path copy marks this version exported")
         let bitmap = NSBitmapImageRep(data: brushPNG)!
@@ -135,7 +157,7 @@ struct CopyPathTests {
                                       windowNumber: window.windowNumber, context: nil, characters: "c",
                                       charactersIgnoringModifiers: "c", isARepeat: false, keyCode: 8)!
         check(window.performKeyEquivalent(with: shortcut), "Shift-Command-C works during inline text editing")
-        let (textURL, textPNG) = try clipboardPNG(pasteboard)
+        let (textURL, textPNG) = try clipboardPNG(pasteboard, editor: editor!)
         check(!canvas.isEditingText && canvas.history.items.count == 2, "copy commits active text once, alongside the brush")
         if case .text(let annotation)? = canvas.history.items.last {
             check(annotation.text == "中文标注\nRead this image", "marked Chinese and multiline text is preserved")
@@ -152,7 +174,7 @@ struct CopyPathTests {
         }
         check(darkPixels > 100, "saved PNG contains actual text pixels, not only annotation history")
         canvas.copyViaResponder(nil)
-        let (repeatURL, repeatPNG) = try clipboardPNG(pasteboard)
+        let (repeatURL, repeatPNG) = try clipboardPNG(pasteboard, editor: editor!)
         check(repeatURL != textURL && repeatPNG == textPNG && canvas.history.items.count == 2, "responder Copy repeats without duplicating annotations or overwriting files")
 
         // A clipboard failure leaves the successfully written file intact, marks
@@ -169,7 +191,7 @@ struct CopyPathTests {
         dismissError(editor!)
         failClipboard = false
         button.performClick(nil)
-        let (recoveredURL, _) = try clipboardPNG(pasteboard)
+        let (recoveredURL, _) = try clipboardPNG(pasteboard, editor: editor!)
         check(!window.isDocumentEdited && button.title.contains("路径已复制"), "copy recovers after a transient clipboard failure")
 
         // A file occupying the target directory gives a deterministic I/O failure
@@ -211,7 +233,5 @@ struct CopyPathTests {
         check(process.terminationStatus == 0 && externalData == textPNG, "separate local process can read copied image path with spaces and Unicode")
         let defaultDirectory = try CopiedImageStore.exportsDirectory()
         check(defaultDirectory.path.hasSuffix("/Library/Application Support/AprilShot/Exports"), "production copy directory is persistent user Application Support")
-        print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) persistent path copy assertions, \(failures) failures")
-        if failures != 0 { exit(1) }
     }
 }

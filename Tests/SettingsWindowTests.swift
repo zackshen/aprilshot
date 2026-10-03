@@ -13,14 +13,26 @@ struct SettingsWindowTests {
         let window = controller.window!
         window.appearance = NSAppearance(named: appearance)
         let content = window.contentView!
+        content.appearance = window.appearance
+        func invalidate(_ view: NSView) {
+            view.needsDisplay = true
+            view.subviews.forEach(invalidate)
+        }
+        invalidate(content)
         content.layoutSubtreeIfNeeded()
         content.displayIfNeeded()
         let bitmap = content.bitmapImageRepForCachingDisplay(in: content.bounds)!
-        content.cacheDisplay(in: content.bounds, to: bitmap)
+        content.effectiveAppearance.performAsCurrentDrawingAppearance {
+            content.cacheDisplay(in: content.bounds, to: bitmap)
+        }
+        let background = bitmap.colorAt(x: 0, y: 0)!
+        check(background.alphaComponent > 0.99, "\(name): settings screenshot includes opaque native background")
+        check(appearance == .darkAqua ? background.redComponent < 0.3 : background.redComponent > 0.8,
+              "\(name): native background follows requested light/dark appearance")
         let directory = URL(fileURLWithPath: ProcessInfo.processInfo.environment["APRILSHOT_TEST_ARTIFACTS"] ?? ".build/rendering-artifacts", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try bitmap.representation(using: .png, properties: [:])!.write(to: directory.appendingPathComponent("settings-\(name).png"))
-        check(bitmap.pixelsWide >= 548 && bitmap.pixelsHigh >= 508, "\(name): native settings screenshot has full dimensions")
+        check(bitmap.pixelsWide >= 548 && bitmap.pixelsHigh >= 376, "\(name): native settings screenshot has full dimensions")
         for control in [controller.keyPopup, controller.retentionPopup, controller.preview,
                         controller.errorLabel, controller.saveButton, controller.cancelButton, controller.resetButton] as [NSView] {
             let rect = control.convert(control.bounds, to: content)

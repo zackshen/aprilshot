@@ -6,6 +6,7 @@ import AppKit
 struct ExportCleanupTests {
     static var checks = 0
     static var failures = 0
+    static var fixturePhase = "initial setup"
     static let manager = FileManager.default
     static let day: TimeInterval = 86_400
     static let now = Date(timeIntervalSince1970: floor(Date().timeIntervalSince1970 + 60 * day))
@@ -48,6 +49,7 @@ struct ExportCleanupTests {
         return url
     }
     static func folder(_ root: URL, _ name: String) throws -> URL {
+        fixturePhase = name
         let url = root.appendingPathComponent(name).appendingPathComponent("Exports", isDirectory: true)
         try manager.createDirectory(at: url, withIntermediateDirectories: true)
         return url
@@ -59,10 +61,22 @@ struct ExportCleanupTests {
         }
     }
 
-    static func main() throws {
-        // Canonicalize only the fixture base: macOS's /var temp alias is a symlink.
-        let root = manager.temporaryDirectory.resolvingSymlinksInPath()
+    static func main() {
+        do { try runTests() }
+        catch {
+            fputs("FAIL: export cleanup [\(fixturePhase)]: \(error.localizedDescription)\n", stderr)
+            exit(1)
+        }
+    }
+
+    static func runTests() throws {
+        // Keep storage fixtures under the same checkout tree as rendering tests.
+        // macOS temp aliases may remain symlinked even after URL normalization;
+        // production correctly refuses those paths rather than following them.
+        let artifacts = URL(fileURLWithPath: ProcessInfo.processInfo.environment["APRILSHOT_TEST_ARTIFACTS"] ?? ".build/rendering-artifacts", isDirectory: true)
+        let root = artifacts.deletingLastPathComponent().appendingPathComponent("test-fixtures", isDirectory: true)
             .appendingPathComponent("AprilShot cleanup 测试 \(UUID().uuidString)", isDirectory: true)
+        print("Cleanup fixture root: \(root.path)")
         try manager.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? manager.removeItem(at: root) } // disposable synthetic fixtures only
         check(ExportRetentionPolicy.default == .threeDays, "default keeps the recent three days")
