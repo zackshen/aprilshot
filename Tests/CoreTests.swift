@@ -3,21 +3,27 @@ import AppKit
 @main
 struct CoreTests {
     static var checks = 0
+    static var failures = 0
+    static let artifacts = URL(fileURLWithPath: ProcessInfo.processInfo.environment["APRILSHOT_TEST_ARTIFACTS"] ?? ".build/rendering-artifacts", isDirectory: true)
     static func check(_ condition: @autoclosure () -> Bool, _ message: String) {
         checks += 1
-        guard condition() else { fatalError("FAIL: \(message)") }
+        if !condition() { failures += 1; print("FAIL: \(message)") }
     }
     static func near(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.00001 }
     static func pixel(_ bitmap: NSBitmapImageRep, x: Int, y: Int) -> NSColor {
-        bitmap.colorAt(x: x, y: y)!.usingColorSpace(.deviceRGB)!
+        // Compare encoded RGB samples, as in the other rendering regressions.
+        // Converting this NSColor wrapper again can change saturated components.
+        bitmap.colorAt(x: x, y: y)!
     }
     static func main() throws {
         _ = NSApplication.shared
+        try FileManager.default.createDirectory(at: artifacts, withIntermediateDirectories: true)
         historyTests()
         geometryTests()
         rectangleTests()
         try rendererTests()
-        print("PASS: \(checks) assertions (history, geometry, PNG rendering)")
+        print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) assertions (history, geometry, PNG rendering), \(failures) failures")
+        if failures != 0 { exit(1) }
     }
     static func historyTests() {
         var history = History<String>()
@@ -87,6 +93,7 @@ struct CoreTests {
         context.fill(CGRect(x: 0, y: 0, width: 240, height: 40))
         let source = context.makeImage()!
         let originalPNG = try AnnotationRenderer.png(image: source, annotations: [])
+        try originalPNG.write(to: artifacts.appendingPathComponent("core-source.png"))
         let original = NSBitmapImageRep(data: originalPNG)!
         check(original.pixelsWide == 240 && original.pixelsHigh == 160, "export keeps exact pixel dimensions")
         check(pixel(original, x: 5, y: 5).blueComponent > 0.9 && pixel(original, x: 5, y: 5).redComponent > 0.9,
@@ -115,11 +122,15 @@ struct CoreTests {
         let rectangle = RectangleAnnotation(start: CGPoint(x: 210, y: 140), end: CGPoint(x: 30, y: 50),
                                             color: .magenta, width: 10)
         let rectanglePNG = try AnnotationRenderer.png(image: source, annotations: [.rectangle(rectangle)])
+        // Save evidence before assertions so failed CI still exposes actual pixels.
+        try rectanglePNG.write(to: artifacts.appendingPathComponent("core-rectangle.png"))
         let framed = NSBitmapImageRep(data: rectanglePNG)!
         for point in [(30, 65), (210, 65), (120, 20), (120, 110), (30, 20), (210, 110)] {
             let sample = pixel(framed, x: point.0, y: point.1)
+            let converted = sample.usingColorSpace(.deviceRGB)
+            print("Rectangle sample (\(point.0), \(point.1)): encoded=\(sample), deviceRGB=\(String(describing: converted))")
             check(sample.redComponent > 0.8 && sample.blueComponent > 0.8 && sample.greenComponent < 0.2,
-                  "rectangle draws its four edges and square corners")
+                  "rectangle edge/corner at (\(point.0), \(point.1)); got encoded \(sample)")
         }
         check(pixel(framed, x: 120, y: 65).greenComponent > 0.9, "rectangle keeps its interior transparent")
         check(pixel(framed, x: 38, y: 65).greenComponent > 0.9, "rectangle line width is expressed in original pixels")

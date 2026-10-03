@@ -71,7 +71,8 @@ struct RectangleTests {
         for point in [CGPoint(x: 100, y: 220), CGPoint(x: 420, y: 220),
                       CGPoint(x: 240, y: 100), CGPoint(x: 240, y: 360),
                       CGPoint(x: 100, y: 100), CGPoint(x: 420, y: 360)] {
-            check(isRed(pixel(bitmap, point)), "\(name): outline edge/corner is rendered at \(point)")
+            let sample = pixel(bitmap, point)
+            check(isRed(sample), "\(name): outline edge/corner at \(point); got encoded \(sample)")
         }
         check(isWhite(pixel(bitmap, CGPoint(x: 240, y: 220))), "\(name): rectangle interior preserves source content")
         check(isWhite(pixel(bitmap, CGPoint(x: 109, y: 220))), "\(name): line width uses original pixels")
@@ -86,7 +87,8 @@ struct RectangleTests {
         let point = canvas.geometry.viewPoint(from: CGPoint(x: 100, y: 220))
         let x = Int(point.x * CGFloat(bitmap.pixelsWide) / canvas.bounds.width)
         let y = Int((canvas.bounds.height - point.y) * CGFloat(bitmap.pixelsHigh) / canvas.bounds.height)
-        check(isRed(bitmap.colorAt(x: x, y: y)!), "\(name): real CanvasView preview contains the outline")
+        let sample = bitmap.colorAt(x: x, y: y)!
+        check(isRed(sample), "\(name): real CanvasView outline at bitmap (\(x), \(y)); got encoded \(sample)")
     }
     static func main() throws {
         _ = NSApplication.shared
@@ -135,8 +137,8 @@ struct RectangleTests {
             check(lastRectangle(canvas)?.width == 12 && lastRectangle(canvas)?.color == .red,
                   "direction \(index): captured style is retained")
             let png = try canvas.exportPNG()
-            checkPNG(png, name: "direction \(index)")
             if index == 0 { try png.write(to: artifacts.appendingPathComponent("rectangle-export.png")) }
+            checkPNG(png, name: "direction \(index)")
             let committed = canvas.history.current.id
             canvas.mouseUp(with: mouse(canvas, pair.1, .leftMouseUp))
             canvas.commitPendingAnnotations()
