@@ -95,6 +95,8 @@ struct SettingsWindowTests {
             check(controller.retentionPopup.selectedTag() == 30, "reopening closed window reloads saved settings")
             controller.close()
         }
+        // Deliver previews of the requested defaults after testing persistence.
+        try prefs.save(shortcut: .default, retentionDays: 3)
         controller.reload()
         try render(controller, name: "light", appearance: .aqua)
         try render(controller, name: "dark", appearance: .darkAqua)
