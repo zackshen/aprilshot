@@ -15,6 +15,7 @@ struct CoreTests {
         _ = NSApplication.shared
         historyTests()
         geometryTests()
+        rectangleTests()
         try rendererTests()
         print("PASS: \(checks) assertions (history, geometry, PNG rendering)")
     }
@@ -60,6 +61,21 @@ struct CoreTests {
                                   bounds: CGRect(x: 0, y: 0, width: 1, height: 1), inset: 18)
         check(tiny.imageRect == .zero, "negative available size is safe")
     }
+    static func rectangleTests() {
+        for (start, end) in [(CGPoint(x: 20, y: 30), CGPoint(x: 100, y: 90)),
+                             (CGPoint(x: 100, y: 90), CGPoint(x: 20, y: 30)),
+                             (CGPoint(x: 100, y: 30), CGPoint(x: 20, y: 90)),
+                             (CGPoint(x: 20, y: 90), CGPoint(x: 100, y: 30))] {
+            let rectangle = RectangleAnnotation(start: start, end: end, color: .red, width: 6)
+            check(rectangle.rect == CGRect(x: 20, y: 30, width: 80, height: 60) && !rectangle.isEmpty,
+                  "rectangle normalizes every drag direction")
+            check(rectangle.width == 6 && rectangle.color == .red, "rectangle retains its line style")
+        }
+        for end in [CGPoint.zero, CGPoint(x: 0, y: 50), CGPoint(x: 50, y: 0)] {
+            check(RectangleAnnotation(start: .zero, end: end, color: .red, width: 6).isEmpty,
+                  "a click or single-axis drag is not a rectangle")
+        }
+    }
     static func rendererTests() throws {
         let space = CGColorSpace(name: CGColorSpace.sRGB)!
         let context = CGContext(data: nil, width: 240, height: 160, bitsPerComponent: 8,
@@ -96,5 +112,21 @@ struct CoreTests {
         } }
         check(darkPixels > 10, "Unicode text renders inside intended image coordinates")
         check(png.starts(with: [137, 80, 78, 71, 13, 10, 26, 10]), "export is a PNG")
+        let rectangle = RectangleAnnotation(start: CGPoint(x: 210, y: 140), end: CGPoint(x: 30, y: 50),
+                                            color: .magenta, width: 10)
+        let rectanglePNG = try AnnotationRenderer.png(image: source, annotations: [.rectangle(rectangle)])
+        let framed = NSBitmapImageRep(data: rectanglePNG)!
+        for point in [(30, 65), (210, 65), (120, 20), (120, 110), (30, 20), (210, 110)] {
+            let sample = pixel(framed, x: point.0, y: point.1)
+            check(sample.redComponent > 0.8 && sample.blueComponent > 0.8 && sample.greenComponent < 0.2,
+                  "rectangle draws its four edges and square corners")
+        }
+        check(pixel(framed, x: 120, y: 65).greenComponent > 0.9, "rectangle keeps its interior transparent")
+        check(pixel(framed, x: 38, y: 65).greenComponent > 0.9, "rectangle line width is expressed in original pixels")
+        check(framed.pixelsWide == 240 && framed.pixelsHigh == 160, "rectangle annotates without cropping the image")
+        let empty = RectangleAnnotation(start: CGPoint(x: 80, y: 80), end: CGPoint(x: 80, y: 120),
+                                        color: .red, width: 32)
+        let emptyPNG = try AnnotationRenderer.png(image: source, annotations: [.rectangle(empty)])
+        check(emptyPNG == originalPNG, "renderer ignores empty rectangles")
     }
 }

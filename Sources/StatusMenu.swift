@@ -40,8 +40,8 @@ struct StatusMenu {
     let menu: NSMenu
     let captureItem: NSMenuItem
 
-    init(target: AnyObject, capture: Selector, images: Selector,
-         permissions: Selector, help: Selector, about: Selector) {
+    init(target: AnyObject, capture: Selector, images: Selector, cleanup: Selector, settings: Selector,
+         permissions: Selector, help: Selector, about: Selector, shortcut: HotKeyShortcut = .default) {
         let menu = NSMenu()
         // AppDelegate owns the capture item's busy state. Automatic validation
         // would otherwise re-enable it while the system selector is running.
@@ -56,10 +56,12 @@ struct StatusMenu {
             return item
         }
 
-        captureItem = item("截图", capture, "capture", key: "2")
-        captureItem.keyEquivalentModifierMask = [.command, .shift]
+        captureItem = item("截图", capture, "capture", key: shortcut.keyEquivalent)
+        captureItem.keyEquivalentModifierMask = shortcut.keyEquivalentModifierMask
         item("图片文件夹", images, "images")
+        item("清理…", cleanup, "cleanup")
         menu.addItem(.separator())
+        item("设置…", settings, "settings", key: ",")
         item("截图权限…", permissions, "permissions")
         item("帮助", help, "help")
         item("关于", about, "about")
@@ -70,14 +72,14 @@ struct StatusMenu {
         self.menu = menu
     }
 
-    static let helpText = """
-    ⌘⇧2  截图 · Esc 取消
-    画笔 / 文字  标注 · ⌘Return 完成文字
+    static func helpText(shortcut: HotKeyShortcut?) -> String { """
+    \(shortcut?.displayString ?? "菜单栏")  截图 · Esc 取消
+    框选 / 画笔 / 文字  标注 · ⌘Return 完成文字
     ⌘Z / ⇧⌘Z  撤销 / 重做
     ⇧⌘C  复制路径 · ⌘S 保存 PNG
 
-    图片保存在本机，可从“图片文件夹”查看或清理。
+    图片默认保留 3 天，可在“设置”调整；“清理”移入废纸篓。
     本机应用可读取复制的路径；远程环境需另行传输。
     关闭窗口后，仍可从菜单栏截图。
-    """
+    """ }
 }

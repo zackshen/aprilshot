@@ -62,9 +62,9 @@ struct CopyPathTests {
     static func main() throws {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.accessory)
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("AprilShot copy path 测试 \(UUID().uuidString)", isDirectory: true)
+        let root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("AprilShot copy path 测试 \(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        // Test fixture cleanup only; production never deletes copied exports.
+        // Remove only this isolated fixture; production cleanup separately protects recent and currently copied exports.
         defer { try? FileManager.default.removeItem(at: root) }
         let pasteboard = NSPasteboard.withUniqueName()
         defer { pasteboard.releaseGlobally() }
@@ -84,6 +84,7 @@ struct CopyPathTests {
         window.contentView!.layoutSubtreeIfNeeded()
         let canvas = editor!.canvas
         let button = copyButton(editor!)
+        canvas.tool = .brush
         canvas.color = .red
         canvas.brushWidth = 24
         let point = CGPoint(x: 160, y: 160)
@@ -163,6 +164,7 @@ struct CopyPathTests {
         check(window.isDocumentEdited && !button.title.contains("路径已复制") && button.title.contains("失败"), "failed copy never reports success or marks the new version exported")
         check(pasteboard.string(forType: .string) == beforeFailure, "failing publisher leaves its prior clipboard text intact")
         let files = try FileManager.default.contentsOfDirectory(at: destination, includingPropertiesForKeys: nil)
+            .filter { $0.pathExtension.lowercased() == "png" }
         check(files.count == 4 && files.allSatisfy { FileManager.default.isReadableFile(atPath: $0.path) }, "clipboard failure still retains every saved PNG")
         dismissError(editor!)
         failClipboard = false

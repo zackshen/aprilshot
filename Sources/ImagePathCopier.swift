@@ -1,7 +1,7 @@
 import AppKit
 
-/// Copied images are user documents, not capture scratch files. Nothing in the
-/// app removes them: paths must still work after another copy or an app restart.
+/// Copied PNGs are persistent exports with registered ownership. Retention and
+/// explicit cleanup may move old copies to Trash; user-selected Save files are separate.
 struct CopiedImageStore {
     private let directory: URL?
 
@@ -15,19 +15,28 @@ struct CopiedImageStore {
     }
 
     func savePNG(_ data: Data) throws -> URL {
-        let destination = try (directory ?? Self.exportsDirectory()).standardizedFileURL.resolvingSymlinksInPath()
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
-        // UUID avoids replacing an older copy, including multiple copies in the same second.
-        let name = "AprilShot_\(formatter.string(from: Date()))_\(UUID().uuidString).png"
-        let url = destination.appendingPathComponent(name)
-        try data.write(to: url, options: .atomic)
-        guard FileManager.default.isReadableFile(atPath: url.path) else {
-            throw CocoaError(.fileReadNoPermission)
+        try OwnedExportRegistry.withLock {
+            let destination = try directory ?? Self.exportsDirectory()
+            try OwnedExportRegistry.validateDirectory(destination, create: true)
+            // Snapshot legacy ownership before creating the first newly tracked file.
+            try OwnedExportRegistry.prepareForSave(directory: destination)
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+            let createdAt = Date()
+            // UUID avoids replacing an older copy, including copies in the same second.
+            let name = "AprilShot_\(formatter.string(from: createdAt))_\(UUID().uuidString).png"
+            let url = destination.appendingPathComponent(name)
+            try data.write(to: url, options: .atomic)
+            guard FileManager.default.isReadableFile(atPath: url.path) else {
+                throw CocoaError(.fileReadNoPermission)
+            }
+            // Record ownership before publishing its path. A registry failure leaves
+            // the PNG intact and, like every storage failure, preserves the clipboard.
+            try OwnedExportRegistry.register(url, createdAt: createdAt)
+            return url
         }
-        return url
     }
 }
 

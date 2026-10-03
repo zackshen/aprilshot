@@ -13,14 +13,23 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build native app
         run: ./scripts/build.sh
-      - name: Run core, capture, toolbar, copy path and status menu tests
+      - name: Run core, capture, toolbar, copy path, menu, settings and cleanup tests
         run: ./scripts/test.sh
-      - name: Package unsigned development app
-        run: ditto -c -k --sequesterRsrc --keepParent build/AprilShot.app build/AprilShot-macOS.zip
+      - name: Package Apple Silicon development app
+        id: package
+        run: |
+          test "$(uname -m)" = arm64
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' build/AprilShot.app/Contents/Info.plist)
+          ARCHIVE="AprilShot-v${VERSION}-macOS-AppleSilicon.zip"
+          ditto -c -k --sequesterRsrc --keepParent build/AprilShot.app "build/$ARCHIVE"
+          (cd build && shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256")
+          echo "archive=$ARCHIVE" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
           name: AprilShot-macOS-development
-          path: build/AprilShot-macOS.zip
+          path: |
+            build/${{ steps.package.outputs.archive }}
+            build/${{ steps.package.outputs.archive }}.sha256
           retention-days: 7
       - name: Upload synthetic rendering evidence
         if: always()

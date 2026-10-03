@@ -122,6 +122,7 @@ struct CaptureRenderingTests {
             window.contentView!.layoutSubtreeIfNeeded()
             try checkCanvas(editor.canvas, name: "canvas-\(attempt)-resized.png")
             // A real canvas input path draws an annotation over the loaded screenshot.
+            editor.canvas.tool = .brush
             editor.canvas.color = .magenta
             editor.canvas.brushWidth = 24
             let dot = CGPoint(x: 100, y: 100)

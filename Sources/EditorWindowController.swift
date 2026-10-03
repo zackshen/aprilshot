@@ -18,6 +18,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private let widthValue = NSTextField(labelWithString: "6 px")
     private let brushSettings = NSView()
     private let textSettings = NSView()
+    private var rectangleButton: EditorToolbarButton!
     private var brushButton: EditorToolbarButton!
     private var textButton: EditorToolbarButton!
     private var undoButton: EditorToolbarButton!
@@ -91,22 +92,26 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     }
     private func buildInterface() {
         guard let content = window?.contentView else { return }
+        rectangleButton = button("框选", symbol: "rectangle", label: "矩形框标注", identifier: "editor.tools.rectangle",
+                                 width: 68, selector: #selector(changeTool(_:)))
         brushButton = button("画笔", symbol: "paintbrush.pointed", label: "画笔", identifier: "editor.tools.brush",
                              width: 68, selector: #selector(changeTool(_:)))
         textButton = button("文字", symbol: "textformat", label: "文字", identifier: "editor.tools.text",
                             width: 68, selector: #selector(changeTool(_:)))
+        rectangleButton.tag = CanvasView.Tool.rectangle.rawValue
         brushButton.tag = CanvasView.Tool.brush.rawValue
         textButton.tag = CanvasView.Tool.text.rawValue
-        for tool in [brushButton!, textButton!] {
+        for tool in [rectangleButton!, brushButton!, textButton!] {
             tool.setButtonType(.pushOnPushOff)
             tool.setAccessibilityRole(.radioButton)
             tool.emphasis = .tool
         }
+        rectangleButton.toolTip = "框选（R）· 拖动画矩形框标注，不裁剪图片"
         brushButton.toolTip = "画笔（B）· 在截图上拖动绘画"
         textButton.toolTip = "文字（T）· 点击截图输入，⌘Return 完成，Esc 取消"
         let tools = EditorToolGroup()
         tools.translatesAutoresizingMaskIntoConstraints = false
-        let toolRow = row([brushButton, textButton], spacing: 2)
+        let toolRow = row([rectangleButton, brushButton, textButton], spacing: 2)
         tools.addSubview(toolRow)
         NSLayoutConstraint.activate([
             toolRow.leadingAnchor.constraint(equalTo: tools.leadingAnchor, constant: 3),
@@ -134,8 +139,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         widthSlider.target = self
         widthSlider.action = #selector(changeWidth(_:))
         widthSlider.identifier = NSUserInterfaceItemIdentifier("editor.brush.width")
-        widthSlider.toolTip = "画笔粗细：1–32 像素 · 仅影响新笔画"
-        widthSlider.setAccessibilityLabel("画笔粗细（像素）")
+        widthSlider.toolTip = "线条粗细：1–32 像素 · 仅影响新矩形和笔画"
+        widthSlider.setAccessibilityLabel("线条粗细（像素）")
         widthSlider.controlSize = .small
         widthSlider.translatesAutoresizingMaskIntoConstraints = false
         widthSlider.widthAnchor.constraint(equalToConstant: 84).isActive = true
@@ -219,13 +224,14 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
     private func updateControls() {
         undoButton.isEnabled = canvas.history.canUndo || canvas.hasPendingContent
         redoButton.isEnabled = canvas.history.canRedo && !canvas.hasPendingContent
-        let isBrush = canvas.tool == .brush
-        brushButton.state = isBrush ? .on : .off
-        textButton.state = isBrush ? .off : .on
-        brushButton.setAccessibilityValue(isBrush ? 1 : 0)
-        textButton.setAccessibilityValue(isBrush ? 0 : 1)
-        brushSettings.isHidden = !isBrush
-        textSettings.isHidden = isBrush
+        for (button, tool) in [(rectangleButton!, CanvasView.Tool.rectangle), (brushButton!, .brush), (textButton!, .text)] {
+            let selected = canvas.tool == tool
+            button.state = selected ? .on : .off
+            button.setAccessibilityValue(selected ? 1 : 0)
+        }
+        let isText = canvas.tool == .text
+        brushSettings.isHidden = isText
+        textSettings.isHidden = !isText
         widthValue.stringValue = "\(Int(canvas.brushWidth.rounded())) px"
         window?.isDocumentEdited = exportedState != canvas.history.current.id || canvas.hasPendingContent
     }
@@ -245,7 +251,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: work)
     }
     @objc private func changeTool(_ sender: NSButton) {
-        canvas.tool = CanvasView.Tool(rawValue: sender.tag) ?? .brush
+        canvas.tool = CanvasView.Tool(rawValue: sender.tag) ?? .rectangle
         updateControls()
         window?.makeFirstResponder(canvas)
     }
@@ -319,8 +325,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate {
         return false
     }
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        canvas.commitText()
-        canvas.finishStroke()
+        canvas.commitPendingAnnotations()
         guard exportedState != canvas.history.current.id else { return true }
         let alert = NSAlert()
         alert.messageText = "关闭这张截图？"

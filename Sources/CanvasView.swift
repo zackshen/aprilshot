@@ -1,10 +1,16 @@
 import AppKit
 
 final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
-    enum Tool: Int { case brush = 0, text = 1 }
+    enum Tool: Int { case rectangle = 0, brush = 1, text = 2 }
     let image: CGImage
     private(set) var history = History<Annotation>()
-    var tool: Tool = .brush { didSet { commitText(); window?.invalidateCursorRects(for: self) } }
+    var tool: Tool = .rectangle {
+        didSet {
+            commitPendingAnnotations()
+            window?.invalidateCursorRects(for: self)
+            onChange?()
+        }
+    }
     var color: NSColor = .systemRed
     var brushWidth: CGFloat = 6
     var textSize: CGFloat = 36
@@ -12,6 +18,16 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     var onCancel: (() -> Void)?
     var onCopy: (() -> Void)?
     private var stroke: BrushStroke?
+    private struct RectangleDraft {
+        let start: CGPoint
+        var end: CGPoint
+        let color: NSColor
+        let width: CGFloat
+        var annotation: RectangleAnnotation {
+            RectangleAnnotation(start: start, end: end, color: color, width: width)
+        }
+    }
+    private var rectangle: RectangleDraft?
     private var textEditor: NSTextView?
     private let textSessionUndoManager = UndoManager()
     private var editingRect = CGRect.zero
@@ -19,7 +35,9 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     private var editingColor: NSColor = .systemRed
     private var editingFontSize: CGFloat = 36
     var isEditingText: Bool { textEditor != nil }
-    var hasPendingContent: Bool { stroke != nil || !(textEditor?.string.isEmpty ?? true) }
+    var hasPendingContent: Bool {
+        stroke != nil || rectangle.map { !$0.annotation.isEmpty } == true || !(textEditor?.string.isEmpty ?? true)
+    }
     var imageSize: CGSize { CGSize(width: image.width, height: image.height) }
     var geometry: CanvasGeometry { CanvasGeometry(imageSize: imageSize, bounds: bounds, inset: 18) }
     override var acceptsFirstResponder: Bool { true }
@@ -33,7 +51,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     override func resetCursorRects() {
-        addCursorRect(geometry.imageRect, cursor: tool == .brush ? .crosshair : .iBeam)
+        addCursorRect(geometry.imageRect, cursor: tool == .text ? .iBeam : .crosshair)
     }
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
@@ -44,6 +62,7 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         context.scaleBy(x: geometry.scale, y: geometry.scale)
         var annotations = history.items
         if let stroke = stroke { annotations.append(.brush(stroke)) }
+        if let rectangle = rectangle { annotations.append(.rectangle(rectangle.annotation)) }
         AnnotationRenderer.draw(image: image, annotations: annotations, in: context)
         context.restoreGState()
         NSColor.separatorColor.setStroke()
@@ -56,38 +75,69 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
         needsDisplay = true
     }
     override func mouseDown(with event: NSEvent) {
-        commitText()
+        commitPendingAnnotations()
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         guard let imagePoint = geometry.imagePoint(from: point) else { return }
         switch tool {
+        case .rectangle:
+            rectangle = RectangleDraft(start: imagePoint, end: imagePoint, color: color, width: brushWidth)
+            didChange()
         case .brush:
             stroke = BrushStroke(points: [imagePoint], color: color, width: brushWidth)
-            needsDisplay = true
+            didChange()
         case .text:
             beginText(at: imagePoint)
         }
     }
     override func mouseDragged(with event: NSEvent) {
-        guard stroke != nil,
+        guard stroke != nil || rectangle != nil,
               let point = geometry.imagePoint(from: convert(event.locationInWindow, from: nil), clamp: true) else { return }
+        if rectangle != nil {
+            rectangle?.end = point
+            didChange()
+            return
+        }
         if let last = stroke?.points.last, hypot(point.x - last.x, point.y - last.y) < 0.5 { return }
         stroke?.points.append(point)
         needsDisplay = true
     }
-    override func mouseUp(with event: NSEvent) { finishStroke() }
+    override func mouseUp(with event: NSEvent) {
+        // The release location may be newer than the last coalesced drag event.
+        if rectangle != nil,
+           let point = geometry.imagePoint(from: convert(event.locationInWindow, from: nil), clamp: true) {
+            rectangle?.end = point
+        }
+        finishDrawing()
+    }
     func finishStroke() {
         guard let stroke = stroke else { return }
         self.stroke = nil
         history.append(.brush(stroke))
         didChange()
     }
+    private func finishRectangle() {
+        guard let rectangle = rectangle else { return }
+        self.rectangle = nil
+        let annotation = rectangle.annotation
+        if !annotation.isEmpty { history.append(.rectangle(annotation)) }
+        didChange()
+    }
+    func finishDrawing() {
+        finishStroke()
+        finishRectangle()
+    }
+    func commitPendingAnnotations() {
+        commitText()
+        finishDrawing()
+    }
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { cancelOperation(nil); return }
         if event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
             switch event.charactersIgnoringModifiers?.lowercased() {
-            case "b": tool = .brush; onChange?(); return
-            case "t": tool = .text; onChange?(); return
+            case "r": tool = .rectangle; return
+            case "b": tool = .brush; return
+            case "t": tool = .text; return
             default: break
             }
         }
@@ -96,9 +146,10 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     override func cancelOperation(_ sender: Any?) {
         if textEditor != nil {
             discardText()
-        } else if stroke != nil {
+        } else if stroke != nil || rectangle != nil {
             stroke = nil
-            needsDisplay = true
+            rectangle = nil
+            didChange()
         } else {
             onCancel?()
         }
@@ -115,11 +166,15 @@ final class CanvasView: NSView, NSTextViewDelegate, NSUserInterfaceValidations {
     @objc(undo:) func undoViaResponder(_ sender: Any?) { undoAnnotation() }
     @objc(redo:) func redoViaResponder(_ sender: Any?) { redoAnnotation() }
     @objc(copy:) func copyViaResponder(_ sender: Any?) { onCopy?() }
-    func undoAnnotation() { commitText(); finishStroke(); history.undo(); didChange() }
-    func redoAnnotation() { commitText(); finishStroke(); history.redo(); didChange() }
+    func undoAnnotation() { commitPendingAnnotations(); history.undo(); didChange() }
+    func redoAnnotation() {
+        guard !hasPendingContent else { return }
+        commitPendingAnnotations()
+        history.redo()
+        didChange()
+    }
     func exportPNG() throws -> Data {
-        commitText()
-        finishStroke()
+        commitPendingAnnotations()
         return try AnnotationRenderer.png(image: image, annotations: history.items)
     }
     private func didChange() { needsDisplay = true; onChange?() }

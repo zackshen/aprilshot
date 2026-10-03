@@ -195,13 +195,15 @@ struct EditorToolbarTests {
         check(!window.isDocumentEdited, "\(name): copied version is marked exported")
     }
 
-    static func checkTool(_ editor: EditorWindowController, expected: CanvasView.Tool, brush: NSButton, text: NSButton,
+    static func checkTool(_ editor: EditorWindowController, expected: CanvasView.Tool, rectangle: NSButton, brush: NSButton, text: NSButton,
                           brushSettings: NSView, textSettings: NSView, name: String) {
         check(editor.canvas.tool == expected, "\(name): canvas tool matches")
-        check(brush.state == (expected == .brush ? .on : .off) && text.state == (expected == .text ? .on : .off), "\(name): precisely one tool is selected")
-        check((brush.accessibilityValue() as? NSNumber)?.intValue == (expected == .brush ? 1 : 0) &&
+        check(rectangle.state == (expected == .rectangle ? .on : .off) &&
+              brush.state == (expected == .brush ? .on : .off) && text.state == (expected == .text ? .on : .off), "\(name): precisely one tool is selected")
+        check((rectangle.accessibilityValue() as? NSNumber)?.intValue == (expected == .rectangle ? 1 : 0) &&
+              (brush.accessibilityValue() as? NSNumber)?.intValue == (expected == .brush ? 1 : 0) &&
               (text.accessibilityValue() as? NSNumber)?.intValue == (expected == .text ? 1 : 0), "\(name): accessibility selection matches the active tool")
-        check(brushSettings.isHidden == (expected != .brush) && textSettings.isHidden == (expected != .text), "\(name): only the selected tool's settings are shown")
+        check(brushSettings.isHidden == (expected == .text) && textSettings.isHidden == (expected != .text), "\(name): only the selected tool's settings are shown")
     }
 
     static func main() throws {
@@ -217,6 +219,7 @@ struct EditorToolbarTests {
         let window = editor.window!
         let content = window.contentView!
         guard let toolbar = find("editor.toolbar", in: content, as: NSView.self),
+              let rectangle = find("editor.tools.rectangle", in: content, as: NSButton.self),
               let brush = find("editor.tools.brush", in: content, as: NSButton.self),
               let text = find("editor.tools.text", in: content, as: NSButton.self),
               let color = find("editor.color", in: content, as: NSColorWell.self),
@@ -232,16 +235,16 @@ struct EditorToolbarTests {
             print("FAIL: toolbar controls missing; \(checks) assertions, \(failures) failures")
             exit(1)
         }
-        let controls: [NSControl] = [brush, text, color, width, font, undo, redo, copy, save]
+        let controls: [NSControl] = [rectangle, brush, text, color, width, font, undo, redo, copy, save]
         for control in controls {
             check(!(control.accessibilityLabel() ?? "").isEmpty, "\(control.identifier!.rawValue): has an accessibility label")
             check(!(control.toolTip ?? "").isEmpty, "\(control.identifier!.rawValue): has a discoverable tooltip")
             check(!control.refusesFirstResponder, "\(control.identifier!.rawValue): permits keyboard focus")
         }
         check(copy.title.contains("复制路径") && copy.accessibilityLabel()?.contains("路径") == true && copy.toolTip?.contains("本机 Codex CLI") == true, "copy label and tooltip describe persistent file paths")
-        check(brush.toolTip?.contains("B") == true && text.toolTip?.contains("T") == true, "tool tooltips expose B/T shortcuts")
+        check(rectangle.toolTip?.contains("R") == true && brush.toolTip?.contains("B") == true && text.toolTip?.contains("T") == true, "tool tooltips expose R/B/T shortcuts")
         check(!undo.isEnabled && !redo.isEnabled, "empty history disables both history actions")
-        checkTool(editor, expected: .brush, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "initial")
+        checkTool(editor, expected: .rectangle, rectangle: rectangle, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "initial")
 
         // Offscreen rendering does not activate the app or capture any desktop pixels.
         for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
@@ -250,11 +253,11 @@ struct EditorToolbarTests {
                 if size == "minimum" {
                     window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: false)
                 } else { window.setContentSize(NSSize(width: 1260, height: 820)) }
-                for (toolName, button, expected) in [("brush", brush, CanvasView.Tool.brush), ("text", text, CanvasView.Tool.text)] {
+                for (toolName, button, expected) in [("rectangle", rectangle, CanvasView.Tool.rectangle), ("brush", brush, .brush), ("text", text, .text)] {
                     button.performClick(nil)
                     layout(window)
                     let name = "toolbar-\(theme)-\(toolName)-\(size)"
-                    checkTool(editor, expected: expected, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: name)
+                    checkTool(editor, expected: expected, rectangle: rectangle, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: name)
                     checkLayout(editor, toolbar: toolbar, controls: controls, name: name)
                     _ = try render(content, name: name)
                 }
@@ -262,13 +265,13 @@ struct EditorToolbarTests {
         }
 
         for iteration in 1...3 {
-            for (button, expected) in [(brush, CanvasView.Tool.brush), (brush, .brush), (text, .text), (text, .text)] {
+            for (button, expected) in [(rectangle, CanvasView.Tool.rectangle), (rectangle, .rectangle), (brush, .brush), (brush, .brush), (text, .text), (text, .text)] {
                 button.performClick(nil)
-                checkTool(editor, expected: expected, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "repeated click \(iteration)")
+                checkTool(editor, expected: expected, rectangle: rectangle, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "repeated click \(iteration)")
             }
-            for (value, code, expected) in [("b", UInt16(11), CanvasView.Tool.brush), ("t", UInt16(17), .text)] {
+            for (value, code, expected) in [("r", UInt16(15), CanvasView.Tool.rectangle), ("b", UInt16(11), .brush), ("t", UInt16(17), .text)] {
                 editor.canvas.keyDown(with: key(editor.canvas, value, code: code))
-                checkTool(editor, expected: expected, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "shortcut \(value) \(iteration)")
+                checkTool(editor, expected: expected, rectangle: rectangle, brush: brush, text: text, brushSettings: brushSettings, textSettings: textSettings, name: "shortcut \(value) \(iteration)")
             }
         }
         brush.performClick(nil)
@@ -380,6 +383,31 @@ struct EditorToolbarTests {
             text.performClick(nil)
             layout(window)
             _ = try render(content, name: "toolbar-\(theme)-annotated")
+        }
+        // Reviewable rectangle evidence uses the same real editor and synthetic page.
+        rectangle.performClick(nil)
+        color.color = rgb(0.91, 0.16, 0.34)
+        action(color)
+        width.doubleValue = 6
+        action(width)
+        let rectangleStart = CGPoint(x: 312, y: 608)
+        let rectangleEnd = CGPoint(x: 1380, y: 336)
+        editor.canvas.mouseDown(with: mouse(editor.canvas, at: rectangleStart, type: .leftMouseDown))
+        editor.canvas.mouseDragged(with: mouse(editor.canvas, at: rectangleEnd, type: .leftMouseDragged))
+        editor.canvas.mouseUp(with: mouse(editor.canvas, at: rectangleEnd, type: .leftMouseUp))
+        for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", NSAppearance.Name.darkAqua)] {
+            window.appearance = NSAppearance(named: appearance)
+            for size in ["minimum", "large"] {
+                if size == "minimum" {
+                    window.setFrame(NSRect(origin: window.frame.origin, size: window.minSize), display: false)
+                } else { window.setContentSize(NSSize(width: 1260, height: 820)) }
+                layout(window)
+                let name = "toolbar-\(theme)-rectangle-annotated-\(size)"
+                checkTool(editor, expected: .rectangle, rectangle: rectangle, brush: brush, text: text,
+                          brushSettings: brushSettings, textSettings: textSettings, name: name)
+                checkLayout(editor, toolbar: toolbar, controls: controls, name: name)
+                _ = try render(content, name: name)
+            }
         }
         window.orderOut(nil)
         print("\(failures == 0 ? "PASS" : "FAIL"): \(checks) toolbar interaction, layout and rendering assertions, \(failures) failures")

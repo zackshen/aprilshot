@@ -4,6 +4,8 @@ private final class MenuProbe: NSObject {
     var calls: [String] = []
     @objc func capture(_ sender: Any?) { calls.append("capture") }
     @objc func images(_ sender: Any?) { calls.append("images") }
+    @objc func cleanup(_ sender: Any?) { calls.append("cleanup") }
+    @objc func settings(_ sender: Any?) { calls.append("settings") }
     @objc func permissions(_ sender: Any?) { calls.append("permissions") }
     @objc func help(_ sender: Any?) { calls.append("help") }
     @objc func about(_ sender: Any?) { calls.append("about") }
@@ -92,15 +94,16 @@ struct StatusMenuTests {
         let probe = MenuProbe()
         let status = StatusMenu(target: probe, capture: #selector(MenuProbe.capture(_:)),
                                 images: #selector(MenuProbe.images(_:)),
+                                cleanup: #selector(MenuProbe.cleanup(_:)), settings: #selector(MenuProbe.settings(_:)),
                                 permissions: #selector(MenuProbe.permissions(_:)),
                                 help: #selector(MenuProbe.help(_:)), about: #selector(MenuProbe.about(_:)))
         let menu = status.menu
         let items = menu.items.filter { !$0.isSeparatorItem }
-        check(items.map { $0.title } == ["截图", "图片文件夹", "截图权限…", "帮助", "关于", "退出"],
+        check(items.map { $0.title } == ["截图", "图片文件夹", "清理…", "设置…", "截图权限…", "帮助", "关于", "退出"],
               "short labels retain every existing capability")
-        check(menu.items.count == 8 && menu.items[2].isSeparatorItem && menu.items[6].isSeparatorItem,
+        check(menu.items.count == 10 && menu.items[3].isSeparatorItem && menu.items[8].isSeparatorItem,
               "capture/files, support, and quit are separated")
-        check(items.map { $0.identifier?.rawValue } == ["status.capture", "status.images", "status.permissions", "status.help", "status.about", "status.quit"],
+        check(items.map { $0.identifier?.rawValue } == ["status.capture", "status.images", "status.cleanup", "status.settings", "status.permissions", "status.help", "status.about", "status.quit"],
               "menu items have unique stable identifiers")
         check(items.allSatisfy { !$0.title.contains("⌘") && !$0.title.contains("\n") && !$0.title.contains("  ") },
               "titles contain no fake shortcut spacing or instructional paragraphs")
@@ -109,16 +112,17 @@ struct StatusMenuTests {
         check(status.captureItem === items[0], "busy state references the actual capture item")
         check(items[0].keyEquivalent == "2" && items[0].keyEquivalentModifierMask == [.command, .shift],
               "capture uses the native ⌘⇧2 shortcut column")
-        check(items[5].keyEquivalent == "q" && items[5].keyEquivalentModifierMask == [.command],
+        check(items[7].keyEquivalent == "q" && items[7].keyEquivalentModifierMask == [.command],
               "quit retains ⌘Q")
-        check(items[5].action == #selector(NSApplication.terminate(_:)) && items[5].target === NSApp,
+        check(items[7].action == #selector(NSApplication.terminate(_:)) && items[7].target === NSApp,
               "quit uses application termination and its unsaved-image protection")
-        check(items[1...4].allSatisfy { $0.keyEquivalent.isEmpty }, "support actions do not add shortcut conflicts")
-        for item in items.prefix(5) {
+        check([items[1], items[2], items[4], items[5], items[6]].allSatisfy { $0.keyEquivalent.isEmpty }, "support actions do not add shortcut conflicts")
+        check(items[3].keyEquivalent == "," && items[3].keyEquivalentModifierMask == [.command], "settings uses the standard Command-comma shortcut")
+        for item in items.prefix(7) {
             check(item.target === probe && item.action != nil, "\(item.title): retains an explicit target/action")
             menu.performActionForItem(at: menu.index(of: item))
         }
-        check(probe.calls == ["capture", "images", "permissions", "help", "about"], "all five actions dispatch to their original destinations")
+        check(probe.calls == ["capture", "images", "cleanup", "settings", "permissions", "help", "about"], "all seven actions dispatch to their original destinations")
         check(!menu.autoenablesItems, "menu honours the explicit capture busy state")
         for _ in 0..<3 {
             status.captureItem.isEnabled = false
@@ -144,10 +148,21 @@ struct StatusMenuTests {
                 }
             } else { check(false, "physical capture key converts to an AppKit event") }
         } else { check(false, "physical capture key event can be constructed") }
-        check(StatusMenu.helpText.contains("⇧⌘C") && StatusMenu.helpText.contains("复制路径") &&
-              StatusMenu.helpText.contains("远程环境") && StatusMenu.helpText.contains("图片文件夹"),
+        let help = StatusMenu.helpText(shortcut: .default)
+        check(help.contains("⇧⌘C") && help.contains("复制路径") &&
+              help.contains("远程环境") && help.contains("废纸篓"),
               "concise help retains persistent local path and remote-environment guidance")
-        check(StatusMenu.helpText.count < 220, "help stays concise")
+        check(help.count < 260, "help stays concise")
+        check(help.contains("框选") && help.contains("3 天"), "help explains rectangle and new retention default")
+        let custom = try! HotKeyShortcut(keyCode: 35, modifiers: [.control, .option])
+        let customMenu = StatusMenu(target: probe, capture: #selector(MenuProbe.capture(_:)),
+                                    images: #selector(MenuProbe.images(_:)), cleanup: #selector(MenuProbe.cleanup(_:)),
+                                    settings: #selector(MenuProbe.settings(_:)), permissions: #selector(MenuProbe.permissions(_:)),
+                                    help: #selector(MenuProbe.help(_:)), about: #selector(MenuProbe.about(_:)), shortcut: custom)
+        check(customMenu.captureItem.keyEquivalent == custom.keyEquivalent && customMenu.captureItem.keyEquivalentModifierMask == custom.keyEquivalentModifierMask,
+              "menu uses configured shortcut instead of stale default")
+        check(StatusMenu.helpText(shortcut: custom).contains(custom.displayString), "help displays configured shortcut")
+        check(!StatusMenu.helpText(shortcut: nil).contains("⌘⇧2"), "failed hotkey registration does not advertise default as active")
     }
 
     /// Real AppKit template rendering in a synthetic button fixture. These are

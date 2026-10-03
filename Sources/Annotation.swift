@@ -5,6 +5,20 @@ struct BrushStroke {
     let color: NSColor
     let width: CGFloat
 }
+struct RectangleAnnotation {
+    let rect: CGRect
+    let color: NSColor
+    let width: CGFloat
+
+    init(start: CGPoint, end: CGPoint, color: NSColor, width: CGFloat) {
+        rect = CGRect(x: min(start.x, end.x), y: min(start.y, end.y),
+                      width: abs(end.x - start.x), height: abs(end.y - start.y))
+        self.color = color
+        self.width = width
+    }
+
+    var isEmpty: Bool { rect.width <= 0 || rect.height <= 0 }
+}
 struct TextAnnotation {
     let text: String
     let rect: CGRect
@@ -12,6 +26,7 @@ struct TextAnnotation {
     let fontSize: CGFloat
 }
 enum Annotation {
+    case rectangle(RectangleAnnotation)
     case brush(BrushStroke)
     case text(TextAnnotation)
 }
@@ -28,6 +43,12 @@ enum AnnotationRenderer {
         NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: false)
         for annotation in annotations {
             switch annotation {
+            case .rectangle(let rectangle):
+                guard !rectangle.isEmpty else { continue }
+                context.setStrokeColor(rectangle.color.cgColor)
+                context.setLineWidth(rectangle.width)
+                context.setLineJoin(.miter)
+                context.stroke(rectangle.rect)
             case .brush(let stroke):
                 guard let first = stroke.points.first else { continue }
                 context.setStrokeColor(stroke.color.cgColor)
